@@ -1,0 +1,1216 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RemoteDesk</title>
+<style>
+:root{--bg:#0d1117;--bg2:#161b22;--bg3:#1c2333;--border:#30363d;--text:#e6edf3;--dim:#8b949e;--accent:#58a6ff;--green:#3fb950;--red:#f85149;--yellow:#d29922;--radius:8px}
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);height:100vh;display:flex;flex-direction:column;overflow:hidden;user-select:none}
+
+/* ═══ 工具栏 ═══ */
+.tb{display:flex;align-items:center;gap:8px;padding:5px 12px;background:var(--bg2);border-bottom:1px solid var(--border);flex-shrink:0;z-index:100;min-height:42px}
+.logo{font-weight:700;color:var(--accent);font-size:14px;white-space:nowrap}
+.sep{width:1px;height:18px;background:var(--border)}
+.tb input[type=text],.tb input[type=password]{padding:4px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);font-size:13px;outline:none;transition:border .15s}
+.tb input:focus{border-color:var(--accent)}.tb input:disabled{opacity:.4}
+.tb input[type=text]{width:190px}.tb input[type=password]{width:120px}
+.btn{padding:4px 12px;border:1px solid var(--border);border-radius:6px;font-size:12px;cursor:pointer;background:var(--bg2);color:var(--text);display:inline-flex;align-items:center;gap:4px;white-space:nowrap;transition:all .12s}
+.btn:hover{background:var(--border)}.btn:active{transform:scale(.97)}
+.btn-go{background:#238636;border-color:transparent;color:#fff}.btn-go:hover{background:#2ea043}
+.btn-stop{border-color:var(--red);color:var(--red);background:transparent}.btn-stop:hover{background:rgba(248,81,73,.12)}
+.btn-icon{padding:4px 6px;font-size:14px}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--dim);flex-shrink:0;transition:all .3s}
+.dot.on{background:var(--green);box-shadow:0 0 5px var(--green)}.dot.err{background:var(--red)}.dot.wait{background:var(--yellow);animation:pulse 1s infinite}
+@keyframes pulse{50%{opacity:.3}}
+.clabel{font-size:11px;color:var(--dim)}
+.badge{font-size:10px;padding:2px 7px;border-radius:9px;background:var(--bg);border:1px solid var(--border);color:var(--dim);font-variant-numeric:tabular-nums}
+.spacer{flex:1}
+
+/* ═══ 下拉菜单（连接历史） ═══ */
+.host-wrap{position:relative}
+.history{display:none;position:absolute;top:100%;left:0;margin-top:4px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;min-width:220px;max-height:200px;overflow-y:auto;box-shadow:0 8px 24px rgba(0,0,0,.4);z-index:110}
+.history.open{display:block}
+.history-item{padding:6px 12px;font-size:12px;color:var(--dim);cursor:pointer;display:flex;justify-content:space-between;align-items:center}
+.history-item:hover{background:var(--border);color:var(--text)}
+.history-item .del{opacity:0;color:var(--red);font-size:14px;cursor:pointer}.history-item:hover .del{opacity:1}
+.history-empty{padding:8px 12px;font-size:11px;color:var(--dim);text-align:center}
+
+/* ═══ 面板 ═══ */
+.overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:200}
+.overlay.open{display:flex;align-items:center;justify-content:center}
+.panel{background:var(--bg2);border:1px solid var(--border);border-radius:12px;width:440px;max-height:80vh;overflow-y:auto;box-shadow:0 16px 48px rgba(0,0,0,.4)}
+.panel-head{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--border)}
+.panel-head h3{font-size:15px;font-weight:600}
+.panel-x{cursor:pointer;font-size:18px;color:var(--dim);background:none;border:none}.panel-x:hover{color:var(--text)}
+.panel-body{padding:16px 18px}
+.field{margin-bottom:16px}
+.field label{display:block;font-size:12px;color:var(--dim);margin-bottom:5px}
+.field-row{display:flex;align-items:center;gap:10px}
+.field input[type=range]{flex:1;accent-color:var(--accent)}
+.field .val{font-size:13px;min-width:40px;text-align:right;font-variant-numeric:tabular-nums}
+.field select{padding:5px 8px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);font-size:13px;outline:none}
+.info-grid{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;font-size:12px}.info-grid .k{color:var(--dim)}.info-grid .v{color:var(--text)}
+
+/* 在线客户端列表 */
+.client-list{font-size:12px}
+.client-row{display:flex;align-items:center;gap:8px;padding:4px 0;color:var(--dim)}
+.client-row .addr{color:var(--text);flex:1}
+.client-row .dur{color:var(--dim)}
+
+/* ═══ 画面 ═══ */
+.screen{flex:1;display:flex;align-items:center;justify-content:center;background:#000;position:relative;overflow:hidden}
+#canvas{display:none;cursor:none}
+/* 拖拽覆盖层 */
+.drop-overlay{display:none;position:absolute;inset:0;background:rgba(88,166,255,.1);border:3px dashed var(--accent);z-index:50;align-items:center;justify-content:center;font-size:18px;color:var(--accent);pointer-events:none}
+.drop-overlay.active{display:flex}
+
+/* ═══ 欢迎页 ═══ */
+.welcome{text-align:center;max-width:440px;padding:40px 20px}
+.welcome .icon{font-size:52px;margin-bottom:12px}
+.welcome h2{font-size:20px;margin-bottom:6px}
+.welcome p{font-size:13px;color:var(--dim);line-height:1.7;margin-bottom:18px}
+.steps{text-align:left;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:14px 18px}
+.step{display:flex;gap:10px;padding:5px 0;font-size:13px;color:var(--dim);align-items:flex-start}
+.step-n{width:18px;height:18px;border-radius:50%;background:var(--accent);color:#fff;font-size:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-weight:700}
+.welcome code{background:var(--bg);border:1px solid var(--border);padding:1px 5px;border-radius:4px;font-size:11px;color:var(--accent)}
+
+/* ═══ 底栏 ═══ */
+.sbar{display:none;padding:2px 12px;background:var(--bg2);border-top:1px solid var(--border);font-size:10px;color:var(--dim);gap:14px;flex-shrink:0;align-items:center}
+.sbar.on{display:flex}.sbar span{display:inline-flex;gap:3px;align-items:center}
+
+/* ═══ Toast ═══ */
+.toast-box{position:fixed;top:52px;right:16px;z-index:300;display:flex;flex-direction:column;gap:6px}
+.toast{padding:8px 14px;border-radius:8px;font-size:12px;color:#fff;background:var(--bg3);border:1px solid var(--border);animation:slideIn .25s ease;box-shadow:0 4px 12px rgba(0,0,0,.3)}
+.toast.ok{border-color:var(--green)}.toast.err{border-color:var(--red)}.toast.warn{border-color:var(--yellow)}
+@keyframes slideIn{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:none}}
+
+/* ═══ 全屏 ═══ */
+body.fs .tb,body.fs .sbar{display:none!important}
+
+/* ═══ 文件管理器 ═══ */
+.fm-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:250;align-items:center;justify-content:center}
+.fm-overlay.open{display:flex}
+.fm-container{background:var(--bg2);border:1px solid var(--border);border-radius:12px;width:94vw;height:88vh;max-width:1400px;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.5);overflow:hidden}
+.fm-header{display:flex;align-items:center;justify-content:space-between;padding:12px 18px;border-bottom:1px solid var(--border);flex-shrink:0}
+.fm-header h3{font-size:15px;font-weight:600;display:flex;align-items:center;gap:8px}
+.fm-close{cursor:pointer;font-size:20px;color:var(--dim);background:none;border:none;padding:2px 6px;border-radius:4px}.fm-close:hover{color:var(--text);background:var(--border)}
+.fm-main{flex:1;display:flex;min-height:0}
+/* 左右两栏 */
+.fm-pane{flex:1;display:flex;flex-direction:column;min-width:0}
+.fm-pane+.fm-pane{border-left:1px solid var(--border)}
+.fm-pane-head{display:flex;align-items:center;gap:6px;padding:8px 14px;border-bottom:1px solid var(--border);background:var(--bg3);flex-shrink:0}
+.fm-pane-title{font-size:13px;font-weight:600;display:flex;align-items:center;gap:5px}
+.fm-pane-actions{display:flex;gap:4px;margin-left:auto}
+.fm-btn{padding:3px 10px;border:1px solid var(--border);border-radius:5px;font-size:11px;cursor:pointer;background:var(--bg2);color:var(--dim);display:inline-flex;align-items:center;gap:3px;white-space:nowrap;transition:all .12s}
+.fm-btn:hover{background:var(--border);color:var(--text)}.fm-btn:active{transform:scale(.97)}
+.fm-btn:disabled{opacity:.35;cursor:not-allowed;pointer-events:none}
+.fm-btn-accent{border-color:var(--accent);color:var(--accent)}.fm-btn-accent:hover{background:rgba(88,166,255,.12)}
+/* 面包屑路径栏 */
+.fm-breadcrumb{display:flex;align-items:center;gap:2px;padding:6px 14px;border-bottom:1px solid var(--border);font-size:12px;flex-shrink:0;overflow-x:auto;background:var(--bg)}
+.fm-breadcrumb::-webkit-scrollbar{height:3px}
+.fm-breadcrumb::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+.fm-bc-seg{color:var(--accent);cursor:pointer;padding:2px 4px;border-radius:3px;white-space:nowrap;flex-shrink:0}.fm-bc-seg:hover{background:rgba(88,166,255,.1)}
+.fm-bc-sep{color:var(--dim);flex-shrink:0;font-size:10px}
+/* 文件列表 */
+.fm-list{flex:1;overflow-y:auto;overflow-x:hidden}
+.fm-list::-webkit-scrollbar{width:6px}.fm-list::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+.fm-list-header{display:grid;grid-template-columns:minmax(0,1fr) 90px 150px;gap:8px;padding:5px 14px;font-size:11px;color:var(--dim);border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--bg2);z-index:1}
+.fm-item{display:grid;grid-template-columns:minmax(0,1fr) 90px 150px;gap:8px;padding:5px 14px;font-size:12px;border-bottom:1px solid rgba(48,54,61,.4);cursor:default;align-items:center;transition:background .08s}
+.fm-item:hover{background:var(--bg3)}
+.fm-item.selected{background:rgba(88,166,255,.1)}
+.fm-item-name{display:flex;align-items:center;gap:6px;overflow:hidden}
+.fm-item-name span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fm-item-icon{flex-shrink:0;font-size:14px}
+.fm-item-size,.fm-item-time{color:var(--dim);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fm-empty{padding:40px;text-align:center;color:var(--dim);font-size:13px}
+/* 拖拽悬停高亮 */
+.fm-pane.drag-hover .fm-list{background:rgba(88,166,255,.04);outline:2px dashed var(--accent);outline-offset:-4px}
+/* 左栏未选择目录的提示 */
+
+/* 拖拽中的条目高亮 */
+.fm-item.dragging{opacity:.5;background:rgba(88,166,255,.15)}
+.fm-item[draggable="true"]{cursor:grab}
+.fm-item[draggable="true"]:active{cursor:grabbing}
+/* 目标目录高亮 */
+.fm-item.drop-target{background:rgba(88,166,255,.18);outline:1px dashed var(--accent);outline-offset:-1px}
+/* 传输方向标记 */
+.fm-xfer .dir-tag{font-size:9px;padding:1px 5px;border-radius:3px;font-weight:600}
+.fm-xfer .dir-tag.up{background:rgba(88,166,255,.15);color:var(--accent)}
+.fm-xfer .dir-tag.down{background:rgba(63,185,80,.15);color:var(--green)}
+/* 传输队列 */
+.fm-queue{border-top:1px solid var(--border);flex-shrink:0;max-height:180px;overflow-y:auto;background:var(--bg)}
+.fm-queue::-webkit-scrollbar{width:5px}.fm-queue::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+.fm-queue-head{display:flex;align-items:center;padding:6px 14px;font-size:12px;font-weight:600;color:var(--dim);border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--bg);z-index:1}
+.fm-queue-head .count{margin-left:6px;background:var(--bg3);padding:1px 7px;border-radius:8px;font-size:10px;font-weight:400}
+.fm-xfer{display:flex;align-items:center;gap:10px;padding:5px 14px;font-size:12px;border-bottom:1px solid rgba(48,54,61,.3)}
+.fm-xfer .icon{font-size:14px;flex-shrink:0}
+.fm-xfer .info{flex:1;min-width:0}
+.fm-xfer .fname{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fm-xfer .meta{font-size:10px;color:var(--dim)}
+.fm-xfer .bar{width:120px;height:4px;background:var(--bg3);border-radius:2px;overflow:hidden;flex-shrink:0}
+.fm-xfer .bar-fill{height:100%;background:var(--accent);border-radius:2px;transition:width .3s}
+.fm-xfer .bar-fill.done{background:var(--green)}
+.fm-xfer .bar-fill.err{background:var(--red)}
+.fm-xfer .status{font-size:10px;width:48px;text-align:right;flex-shrink:0;color:var(--dim)}
+/* 右键菜单 */
+.fm-ctx{display:none;position:fixed;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:4px 0;box-shadow:0 8px 24px rgba(0,0,0,.5);z-index:260;min-width:140px}
+.fm-ctx.open{display:block}
+.fm-ctx-item{padding:6px 14px;font-size:12px;color:var(--text);cursor:pointer;display:flex;align-items:center;gap:8px}
+.fm-ctx-item:hover{background:var(--border)}
+.fm-ctx-item.danger{color:var(--red)}
+.fm-ctx-sep{height:1px;background:var(--border);margin:3px 0}
+
+/* ═══ 设备管理面板 ═══ */
+.dev-panel{width:520px}
+.dev-list{max-height:320px;overflow-y:auto}
+.dev-list::-webkit-scrollbar{width:5px}.dev-list::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+.dev-row{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--border);cursor:pointer;transition:background .1s}
+.dev-row:hover{background:var(--bg3)}
+.dev-row .dev-icon{font-size:22px;flex-shrink:0}
+.dev-row .dev-info{flex:1;min-width:0}
+.dev-row .dev-name{font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dev-row .dev-host{font-size:11px;color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dev-row .dev-note{font-size:10px;color:var(--dim);font-style:italic;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dev-row .dev-last{font-size:10px;color:var(--dim);flex-shrink:0;white-space:nowrap}
+.dev-row .dev-actions{display:flex;gap:4px;flex-shrink:0;opacity:0;transition:opacity .15s}
+.dev-row:hover .dev-actions{opacity:1}
+.dev-act{padding:2px 6px;border:1px solid var(--border);border-radius:4px;cursor:pointer;background:none;color:var(--dim);font-size:12px;transition:all .1s}
+.dev-act:hover{background:var(--border);color:var(--text)}
+.dev-act.del:hover{border-color:var(--red);color:var(--red);background:rgba(248,81,73,.1)}
+.dev-empty{text-align:center;padding:30px 20px;color:var(--dim);font-size:13px}
+.dev-form{display:grid;gap:10px;padding:4px 0}
+.dev-form label{font-size:12px;color:var(--dim);margin-bottom:2px;display:block}
+.dev-form input{width:100%;padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);font-size:13px;outline:none}
+.dev-form input:focus{border-color:var(--accent)}
+.dev-form .row{display:flex;gap:8px;justify-content:flex-end;margin-top:4px}
+.dev-form .btn-save{background:#238636;border-color:transparent;color:#fff;padding:5px 16px;border-radius:6px;cursor:pointer;font-size:12px}.dev-form .btn-save:hover{background:#2ea043}
+.dev-form .btn-cancel{background:none;border:1px solid var(--border);color:var(--dim);padding:5px 16px;border-radius:6px;cursor:pointer;font-size:12px}.dev-form .btn-cancel:hover{color:var(--text);background:var(--border)}
+
+/* ═══ 设置面板密码区 ═══ */
+.pwd-row{display:flex;align-items:center;gap:8px}
+.pwd-row input{flex:1;padding:5px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);font-size:13px;outline:none;font-family:monospace}
+.pwd-row input:focus{border-color:var(--accent)}
+.pwd-row .btn-sm{padding:4px 10px;border:1px solid var(--border);border-radius:5px;cursor:pointer;background:var(--bg2);color:var(--dim);font-size:11px;transition:all .1s}
+.pwd-row .btn-sm:hover{background:var(--border);color:var(--text)}
+.pwd-row .btn-sm.save{border-color:var(--green);color:var(--green)}.pwd-row .btn-sm.save:hover{background:rgba(63,185,80,.12)}
+</style>
+</head>
+<body>
+
+<div class="tb">
+    <span class="logo">🖥 RemoteDesk</span><div class="sep"></div>
+    <div class="host-wrap">
+        <input type="text" id="inp-host" placeholder="IP:端口" autocomplete="off">
+        <div class="history" id="history"></div>
+    </div>
+    <input type="password" id="inp-pwd" placeholder="密码">
+    <button class="btn btn-go" id="btn-go">▶ 连接</button>
+    <button class="btn btn-stop" id="btn-stop" style="display:none">■ 断开</button>
+    <div class="sep"></div>
+    <span class="dot" id="dot"></span>
+    <span class="clabel" id="clabel">未连接</span>
+    <span class="badge" id="b-fps" style="display:none">- fps</span>
+    <span class="badge" id="b-ping" style="display:none">- ms</span>
+    <div class="spacer"></div>
+    <button class="btn btn-icon" id="btn-clip" title="同步剪贴板" style="display:none">📋</button>
+    <button class="btn btn-icon" id="btn-file" title="文件传输" style="display:none">📁</button>
+    <button class="btn btn-icon" id="btn-settings" title="设置" style="display:none">⚙️</button>
+    <button class="btn btn-icon" id="btn-devices" title="设备管理">💻</button>
+    <button class="btn btn-icon" id="btn-fs" title="全屏 F11">⛶</button>
+</div>
+
+<div class="screen" id="scr">
+    <canvas id="canvas"></canvas>
+    <div class="drop-overlay" id="drop-overlay">📁 松开鼠标上传文件</div>
+    <div class="welcome" id="welcome">
+        <div class="icon">🖥️</div>
+        <h2>RemoteDesk</h2>
+        <p>轻量开源远程桌面 · 替代向日葵</p>
+        <div class="steps">
+            <div class="step"><span class="step-n">1</span><span>被控电脑运行 <code>python agent.py</code></span></div>
+            <div class="step"><span class="step-n">2</span><span>输入被控端 IP:端口 + 密码</span></div>
+            <div class="step"><span class="step-n">3</span><span>点击连接，开始远程操控</span></div>
+        </div>
+    </div>
+</div>
+
+<div class="sbar" id="sbar">
+    <span id="s-res">-</span><span id="s-bw">-</span><span id="s-frames">-</span><span id="s-ping">-</span><span id="s-sys"></span>
+</div>
+
+<!-- 设置面板 -->
+<div class="overlay" id="ov-settings">
+<div class="panel">
+    <div class="panel-head"><h3>⚙️ 设置</h3><button class="panel-x" id="x-settings">✕</button></div>
+    <div class="panel-body">
+        <div class="field"><label>画质</label><div class="field-row"><input type="range" min="10" max="95" id="sl-q"><span class="val" id="v-q">50</span></div></div>
+        <div class="field"><label>帧率</label><div class="field-row"><input type="range" min="1" max="60" id="sl-f"><span class="val" id="v-f">30</span></div></div>
+        <div class="field"><label>显示器</label><select id="sel-mon"></select></div>
+        <div class="field">
+            <label>连接密码</label>
+            <div class="pwd-row">
+                <input type="text" id="inp-agent-pwd" placeholder="当前密码" readonly>
+                <button class="btn-sm" id="btn-pwd-edit" title="编辑">✏️</button>
+                <button class="btn-sm save" id="btn-pwd-save" title="保存" style="display:none">💾 保存</button>
+                <button class="btn-sm" id="btn-pwd-cancel" style="display:none">取消</button>
+            </div>
+        </div>
+        <div class="field">
+            <label>设备名称</label>
+            <div class="pwd-row">
+                <input type="text" id="inp-device-name" placeholder="设备名" readonly>
+                <button class="btn-sm" id="btn-name-edit" title="编辑">✏️</button>
+                <button class="btn-sm save" id="btn-name-save" title="保存" style="display:none">💾 保存</button>
+                <button class="btn-sm" id="btn-name-cancel" style="display:none">取消</button>
+            </div>
+        </div>
+        <div class="field"><label>在线客户端</label><div class="client-list" id="client-list"></div></div>
+        <div class="field"><label>系统信息</label><div class="info-grid" id="sys-info"></div></div>
+    </div>
+</div></div>
+
+<!-- 设备管理面板 -->
+<div class="overlay" id="ov-devices">
+<div class="panel dev-panel">
+    <div class="panel-head"><h3>💻 设备列表</h3><button class="panel-x" id="x-devices">✕</button></div>
+    <div class="panel-body" style="padding:0">
+        <div style="padding:10px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px">
+            <button class="btn btn-go" id="btn-dev-add" style="font-size:12px">＋ 添加设备</button>
+            <span style="flex:1"></span>
+            <span style="font-size:11px;color:var(--dim)" id="dev-count">0 台设备</span>
+        </div>
+        <div id="dev-form-area" style="display:none;padding:14px 18px;border-bottom:1px solid var(--border)">
+            <div class="dev-form" id="dev-form">
+                <div><label>设备名称 *</label><input type="text" id="dev-f-name" placeholder="如: 办公室电脑"></div>
+                <div><label>地址 (IP:端口) *</label><input type="text" id="dev-f-host" placeholder="如: 192.168.1.100:8765"></div>
+                <div><label>备注</label><input type="text" id="dev-f-note" placeholder="可选"></div>
+                <div class="row">
+                    <button class="btn-cancel" id="dev-f-cancel">取消</button>
+                    <button class="btn-save" id="dev-f-save">保存</button>
+                </div>
+            </div>
+        </div>
+        <div class="dev-list" id="dev-list"></div>
+    </div>
+</div></div>
+
+<!-- 文件管理器（全屏双栏） -->
+<div class="fm-overlay" id="fm-overlay">
+<div class="fm-container">
+    <div class="fm-header">
+        <h3>📁 文件管理器</h3>
+        <button class="fm-close" id="fm-close">✕</button>
+    </div>
+    <div class="fm-main">
+        <!-- 左栏：远程文件浏览（独立路径） -->
+        <div class="fm-pane" id="fm-left-pane">
+            <div class="fm-pane-head">
+                <span class="fm-pane-title">📂 左栏</span>
+                <div class="fm-pane-actions">
+                    <button class="fm-btn" id="fm-left-mkdir" title="新建文件夹">📁+</button>
+                    <button class="fm-btn" id="fm-left-refresh" title="刷新">🔄</button>
+                </div>
+            </div>
+            <div class="fm-breadcrumb" id="fm-left-breadcrumb"></div>
+            <div class="fm-list" id="fm-left-list">
+                <div class="fm-list-header"><span>名称</span><span>大小</span><span>修改时间</span></div>
+                <div class="fm-empty">连接后浏览远程文件</div>
+            </div>
+        </div>
+        <!-- 右栏：远程文件浏览（独立路径） -->
+        <div class="fm-pane" id="fm-right-pane">
+            <div class="fm-pane-head">
+                <span class="fm-pane-title">📂 右栏</span>
+                <div class="fm-pane-actions">
+                    <button class="fm-btn" id="fm-right-mkdir" title="新建文件夹">📁+</button>
+                    <button class="fm-btn" id="fm-right-refresh" title="刷新">🔄</button>
+                </div>
+            </div>
+            <div class="fm-breadcrumb" id="fm-right-breadcrumb"></div>
+            <div class="fm-list" id="fm-right-list">
+                <div class="fm-list-header"><span>名称</span><span>大小</span><span>修改时间</span></div>
+                <div class="fm-empty">连接后浏览远程文件</div>
+            </div>
+        </div>
+    </div>
+    <!-- 传输队列 -->
+    <div class="fm-queue" id="fm-queue" style="display:none">
+        <div class="fm-queue-head">传输队列 <span class="count" id="fm-queue-count">0</span></div>
+        <div id="fm-queue-list"></div>
+    </div>
+</div>
+</div>
+
+<!-- 右键菜单 -->
+<div class="fm-ctx" id="fm-ctx">
+    <div class="fm-ctx-item" data-action="open">📂 打开</div>
+    <div class="fm-ctx-item" data-action="copy-to-other">📋 复制到对面</div>
+    <div class="fm-ctx-item" data-action="download-browser">💾 下载到浏览器</div>
+    <div class="fm-ctx-sep"></div>
+    <div class="fm-ctx-item danger" data-action="delete">🗑 删除</div>
+</div>
+
+<div class="toast-box" id="tbox"></div>
+
+<script>
+(()=>{
+const $=s=>document.getElementById(s);
+const canvas=$('canvas'),ctx=canvas.getContext('2d');
+const welcome=$('welcome'),inpHost=$('inp-host'),inpPwd=$('inp-pwd');
+const btnGo=$('btn-go'),btnStop=$('btn-stop');
+const dot=$('dot'),clabel=$('clabel'),bFps=$('b-fps'),bPing=$('b-ping');
+const btnClip=$('btn-clip'),btnFile=$('btn-file'),btnSettings=$('btn-settings'),btnFs=$('btn-fs'),btnDevices=$('btn-devices');
+const sbar=$('sbar'),sRes=$('s-res'),sBw=$('s-bw'),sFrames=$('s-frames'),sPing=$('s-ping'),sSys=$('s-sys');
+const ovSettings=$('ov-settings'),ovDevices=$('ov-devices');
+const slQ=$('sl-q'),vQ=$('v-q'),slF=$('sl-f'),vF=$('v-f'),selMon=$('sel-mon');
+const clientList=$('client-list'),sysInfo=$('sys-info');
+const historyEl=$('history'),dropOverlay=$('drop-overlay'),tbox=$('tbox');
+
+let ws=null,screenW=0,screenH=0;
+let frameCount=0,totalFrames=0,totalBytes=0;
+let lastStatTime=0,statsTimer=null,connectTime=0;
+let pingTimer=null,lastPing=0;
+let reconnectTimer=null,reconnecting=false;
+let passwordHash='',remoteFileDir='';
+const imgEl=new Image();
+
+// ─── 获取 WS 端口（内嵌服务注入 or 默认）───
+const WS_PORT = window.__WS_PORT__ || 8765;
+
+// ─── Toast ───
+function toast(msg,type=''){const el=document.createElement('div');el.className='toast '+type;el.textContent=msg;tbox.appendChild(el);setTimeout(()=>el.remove(),3500)}
+
+// ─── 连接历史 ───
+function getHistory(){try{return JSON.parse(localStorage.getItem('rd-history')||'[]')}catch{return[]}}
+function addHistory(host){let h=getHistory().filter(x=>x!==host);h.unshift(host);if(h.length>10)h=h.slice(0,10);localStorage.setItem('rd-history',JSON.stringify(h))}
+function delHistory(host){const h=getHistory().filter(x=>x!==host);localStorage.setItem('rd-history',JSON.stringify(h));renderHistory()}
+function renderHistory(){
+    const h=getHistory();
+    if(!h.length){historyEl.innerHTML='<div class="history-empty">暂无记录</div>';return}
+    historyEl.innerHTML=h.map(x=>`<div class="history-item" data-host="${x}"><span>${x}</span><span class="del" data-del="${x}">✕</span></div>`).join('');
+}
+inpHost.addEventListener('focus',()=>{renderHistory();historyEl.classList.add('open')});
+document.addEventListener('click',e=>{if(!e.target.closest('.host-wrap'))historyEl.classList.remove('open')});
+historyEl.addEventListener('click',e=>{
+    const del=e.target.dataset.del;
+    if(del){e.stopPropagation();delHistory(del);return}
+    const item=e.target.closest('.history-item');
+    if(item){inpHost.value=item.dataset.host;historyEl.classList.remove('open');inpPwd.focus()}
+});
+
+// ─── 加密 ───
+async function sha256(t){const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(t));return[...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('')}
+async function hmacSha256(k,m){const key=await crypto.subtle.importKey('raw',new TextEncoder().encode(k),{name:'HMAC',hash:'SHA-256'},false,['sign']);const sig=await crypto.subtle.sign('HMAC',key,new TextEncoder().encode(m));return[...new Uint8Array(sig)].map(x=>x.toString(16).padStart(2,'0')).join('')}
+
+// ─── 连接 ───
+function setConn(s,l){dot.className='dot '+s;clabel.textContent=l}
+
+async function connect(isReconnect=false){
+    let host=inpHost.value.trim();
+    const pwd=inpPwd.value;
+    if(!host){inpHost.focus();return}
+    if(!pwd&&!isReconnect){inpPwd.focus();toast('请输入密码','err');return}
+
+    // 如果通过内嵌 Web 访问，且用户只输了 IP（没端口），自动补 WS 端口
+    if(!host.includes(':'))host+=':'+WS_PORT;
+    inpHost.value=host;
+
+    addHistory(host);
+    if(!isReconnect)passwordHash=await sha256(pwd);
+
+    setConn('wait',isReconnect?'重连中...':'连接中...');
+    if(!isReconnect){btnGo.style.display='none';btnStop.style.display='';inpHost.disabled=inpPwd.disabled=true}
+
+    ws=new WebSocket(`ws://${host}`);
+    ws.binaryType='arraybuffer';
+    ws.onopen=()=>{};
+    ws.onmessage=async e=>{
+        if(typeof e.data==='string'){await handleMsg(JSON.parse(e.data))}
+        else{
+            frameCount++;totalFrames++;totalBytes+=e.data.byteLength;
+            const blob=new Blob([e.data],{type:'image/jpeg'});
+            const url=URL.createObjectURL(blob);
+            imgEl.onload=()=>{canvas.width=imgEl.naturalWidth;canvas.height=imgEl.naturalHeight;ctx.drawImage(imgEl,0,0);URL.revokeObjectURL(url);canvas.style.display='block';welcome.style.display='none'};
+            imgEl.src=url;
+        }
+    };
+    ws.onclose=()=>{if(!reconnecting&&ws){setConn('err','连接断开');toast('连接断开，5秒后重连...','err');schedReconn()}};
+    ws.onerror=()=>{if(!reconnecting){setConn('err','连接失败');if(!isReconnect)toast('无法连接到被控端','err');schedReconn()}};
+}
+
+async function handleMsg(m){
+    switch(m.type){
+    case'auth_challenge':{const r=await hmacSha256(passwordHash,m.challenge);ws.send(JSON.stringify({type:'auth_response',response:r}));break}
+    case'auth_failed':toast('密码错误','err');setConn('err','认证失败');cancelReconn();resetUI();break;
+    case'connected':
+        reconnecting=false;cancelReconn();setConn('on','已连接');
+        screenW=m.screen.width;screenH=m.screen.height;
+        sRes.textContent=`${screenW}×${screenH}`;
+        slQ.value=m.quality;vQ.textContent=m.quality;
+        slF.value=m.fps;vF.textContent=m.fps;
+        selMon.innerHTML='';(m.monitors||[]).forEach(x=>{const o=document.createElement('option');o.value=x.index;o.textContent=`${x.name} (${x.width}×${x.height})`;selMon.appendChild(o)});
+        if(m.system){sSys.textContent=m.system.hostname;sysInfo.innerHTML=`<span class="k">主机</span><span class="v">${m.system.hostname}</span><span class="k">系统</span><span class="v">${m.system.os}</span><span class="k">Python</span><span class="v">${m.system.python}</span>`}
+        if(m.file_dir)remoteFileDir=m.file_dir;
+        [btnClip,btnFile,btnSettings].forEach(b=>b.style.display='');
+        sbar.classList.add('on');btnGo.style.display='none';btnStop.style.display='';inpHost.disabled=inpPwd.disabled=true;
+        frameCount=totalFrames=totalBytes=0;lastStatTime=performance.now();connectTime=Date.now();
+        if(statsTimer)clearInterval(statsTimer);statsTimer=setInterval(updateStats,1000);startPing();
+        send({type:'get_agent_info'});
+        toast('连接成功 ✓','ok');break;
+    case'pong':lastPing=Date.now()-m.ts;bPing.textContent=lastPing+'ms';bPing.style.display='';sPing.textContent='延迟:'+lastPing+'ms';break;
+    case'quality_changed':slQ.value=m.quality;vQ.textContent=m.quality;break;
+    case'fps_changed':slF.value=m.fps;vF.textContent=m.fps;break;
+    case'monitor_changed':screenW=m.screen.width;screenH=m.screen.height;sRes.textContent=`${screenW}×${screenH}`;toast(`已切换显示器 ${m.index}`,'ok');break;
+    case'clipboard_data':try{await navigator.clipboard.writeText(m.text);toast('剪贴板已同步','ok')}catch{toast('剪贴板权限被拒绝','err')};break;
+    case'clients_list':renderClients(m.clients);break;
+    case'password_changed':
+        if(m.success){$('inp-agent-pwd').value=m.password;toast('密码已更新 ✓','ok')}
+        else{toast('密码修改失败: '+(m.error||''),'err')};break;
+    case'device_name_changed':
+        if(m.success){$('inp-device-name').value=m.name;toast('设备名已更新 ✓','ok')}
+        break;
+    case'agent_info':
+        if(m.password)$('inp-agent-pwd').value=m.password;
+        if(m.device_name)$('inp-device-name').value=m.device_name;
+        break;
+    // 文件管理器消息
+    case'dir_content':FM.onDirContent(m);break;
+    case'file_saved':FM.onFileSaved(m);break;
+    case'file_data':FM.onFileData(m);break;
+    case'file_copied':FM.onFileCopied(m);break;
+    case'dir_created':FM.onDirCreated(m);break;
+    case'item_deleted':FM.onItemDeleted(m);break;
+    // 兼容旧协议
+    case'file_list':break;
+    }
+}
+
+function disconnect(){reconnecting=true;cancelReconn();if(ws){ws.close();ws=null}resetUI();setConn('','已断开');reconnecting=false}
+function resetUI(){if(statsTimer){clearInterval(statsTimer);statsTimer=null}if(pingTimer){clearInterval(pingTimer);pingTimer=null}ws=null;btnGo.style.display='';btnStop.style.display='none';inpHost.disabled=inpPwd.disabled=false;[btnClip,btnFile,btnSettings].forEach(b=>b.style.display='none');bFps.style.display=bPing.style.display='none';canvas.style.display='none';welcome.style.display='';sbar.classList.remove('on')}
+
+function schedReconn(){if(reconnectTimer)return;reconnecting=true;reconnectTimer=setTimeout(()=>{reconnectTimer=null;if(passwordHash)connect(true);else{reconnecting=false;resetUI()}},5000)}
+function cancelReconn(){if(reconnectTimer){clearTimeout(reconnectTimer);reconnectTimer=null}}
+function startPing(){if(pingTimer)clearInterval(pingTimer);pingTimer=setInterval(()=>send({type:'ping',ts:Date.now()}),2000)}
+
+function updateStats(){const now=performance.now(),el=(now-lastStatTime)/1000;if(el<=0)return;const fps=frameCount/el;const bps=totalBytes/Math.max((Date.now()-connectTime)/1000,1);bFps.textContent=fps.toFixed(1)+' fps';bFps.style.display='';sBw.textContent=fmtBps(bps);sFrames.textContent='帧:'+totalFrames;frameCount=0;lastStatTime=now}
+function fmtBps(b){const m=(b*8)/1e6;return m>=1?m.toFixed(1)+' Mbps':(m*1000).toFixed(0)+' Kbps'}
+
+// ─── 输入 ───
+function send(o){if(ws?.readyState===1)ws.send(JSON.stringify(o))}
+function rXY(e){const r=canvas.getBoundingClientRect();return{x:Math.round((e.clientX-r.left)*screenW/r.width),y:Math.round((e.clientY-r.top)*screenH/r.height)}}
+function mb(b){return['left','middle','right'][b]||'left'}
+
+let mQ=null;
+canvas.addEventListener('mousemove',e=>{mQ=rXY(e)});
+(function flush(){if(mQ){send({type:'mouse_move',...mQ});mQ=null}requestAnimationFrame(flush)})();
+canvas.addEventListener('mousedown',e=>{e.preventDefault();send({type:'mouse_move',...rXY(e)});send({type:'mouse_down',button:mb(e.button)})});
+canvas.addEventListener('mouseup',e=>{e.preventDefault();send({type:'mouse_up',button:mb(e.button)})});
+canvas.addEventListener('wheel',e=>{e.preventDefault();send({type:'mouse_scroll',delta:e.deltaY>0?-1:1})},{passive:false});
+canvas.addEventListener('contextmenu',e=>e.preventDefault());
+
+document.addEventListener('keydown',e=>{
+    if(!ws||ws.readyState!==1)return;
+    if(e.key==='F11'){e.preventDefault();toggleFs();return}
+    if(e.key==='Escape'&&document.body.classList.contains('fs')){document.body.classList.remove('fs');return}
+    if((e.ctrlKey||e.metaKey)&&['r','l','w','t','n'].includes(e.key.toLowerCase()))return;
+    e.preventDefault();send({type:'key_down',key:e.key});
+});
+document.addEventListener('keyup',e=>{if(!ws||ws.readyState!==1)return;if(['F11','Escape'].includes(e.key))return;e.preventDefault();send({type:'key_up',key:e.key})});
+
+function toggleFs(){document.body.classList.toggle('fs');document.body.classList.contains('fs')?document.documentElement.requestFullscreen?.():document.exitFullscreen?.()}
+
+// ─── 设置面板 ───
+let qD=null,fD=null;
+slQ.addEventListener('input',()=>{vQ.textContent=slQ.value;clearTimeout(qD);qD=setTimeout(()=>send({type:'set_quality',quality:+slQ.value}),300)});
+slF.addEventListener('input',()=>{vF.textContent=slF.value;clearTimeout(fD);fD=setTimeout(()=>send({type:'set_fps',fps:+slF.value}),300)});
+selMon.addEventListener('change',()=>send({type:'set_monitor',index:+selMon.value}));
+
+function renderClients(list){
+    if(!list||!list.length){clientList.innerHTML='<div style="color:var(--dim);font-size:12px">无</div>';return}
+    clientList.innerHTML=list.map(c=>{
+        const dur=c.duration;const m=Math.floor(dur/60),s=dur%60;
+        return`<div class="client-row"><span class="addr">${c.addr}</span><span class="dur">${m}分${s}秒</span></div>`;
+    }).join('');
+}
+
+// ─── 拖拽上传（画面区域，兼容旧行为） ───
+const scr=$('scr');
+scr.addEventListener('dragover',e=>{e.preventDefault();dropOverlay.classList.add('active')});
+scr.addEventListener('dragleave',e=>{if(!scr.contains(e.relatedTarget))dropOverlay.classList.remove('active')});
+scr.addEventListener('drop',e=>{e.preventDefault();dropOverlay.classList.remove('active');[...e.dataTransfer.files].forEach(f=>FM.uploadFileToRemote(f))});
+
+// ─── 剪贴板 ───
+btnClip.addEventListener('click',async()=>{send({type:'get_clipboard'});try{const t=await navigator.clipboard.readText();if(t)send({type:'set_clipboard',text:t})}catch{}});
+
+// ─── 按钮 ───
+btnGo.addEventListener('click',()=>connect());
+btnStop.addEventListener('click',disconnect);
+[inpHost,inpPwd].forEach(el=>el.addEventListener('keydown',e=>{if(e.key==='Enter')connect()}));
+btnFs.addEventListener('click',toggleFs);
+btnSettings.addEventListener('click',()=>{ovSettings.classList.add('open');send({type:'list_clients'});send({type:'get_agent_info'})});
+$('x-settings').addEventListener('click',()=>ovSettings.classList.remove('open'));
+ovSettings.addEventListener('click',e=>{if(e.target===ovSettings)ovSettings.classList.remove('open')});
+
+// Canvas 自适应
+function fit(){const a=$('scr');canvas.style.maxWidth=a.clientWidth+'px';canvas.style.maxHeight=a.clientHeight+'px'}
+window.addEventListener('resize',fit);fit();
+
+// 恢复上次地址
+const h=getHistory();if(h.length)inpHost.value=h[0];
+
+
+// ═══════════════════════════════════════════════════
+// ═══ 文件管理器 (FM) — 双栏远程浏览 + 拖拽复制 ═══
+// ═══════════════════════════════════════════════════
+const FM = (()=>{
+    const overlay = $('fm-overlay');
+    const leftPane = $('fm-left-pane');
+    const leftList = $('fm-left-list');
+    const leftBreadcrumb = $('fm-left-breadcrumb');
+    const rightPane = $('fm-right-pane');
+    const rightList = $('fm-right-list');
+    const rightBreadcrumb = $('fm-right-breadcrumb');
+    const queueEl = $('fm-queue');
+    const queueList = $('fm-queue-list');
+    const queueCount = $('fm-queue-count');
+    const ctxMenu = $('fm-ctx');
+
+    // ── state (两栏各自独立) ──
+    let leftPath = '';
+    let leftItems = [];
+    let rightPath = '';
+    let rightItems = [];
+    let transfers = [];
+    let xferId = 0;
+    let ctxTarget = null;
+    let ctxSide = '';  // 'left' | 'right'
+
+    // ── helpers ──
+    function fmtSize(b){
+        if(b==null||b<0) return '-';
+        if(b<1024) return b+' B';
+        if(b<1048576) return (b/1024).toFixed(1)+' KB';
+        if(b<1073741824) return (b/1048576).toFixed(1)+' MB';
+        return (b/1073741824).toFixed(2)+' GB';
+    }
+    function fmtTime(ts){
+        if(!ts) return '-';
+        const d = ts instanceof Date ? ts : new Date(ts*1000);
+        const pad=n=>String(n).padStart(2,'0');
+        return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    }
+    function pathJoin(base,name){
+        if(!base) return name;
+        const sep = base.includes('/') ? '/' : '\\';
+        return base.replace(/[\/\\]$/,'') + sep + name;
+    }
+
+    // ── open / close ──
+    function open(){
+        overlay.classList.add('open');
+        browseTo('left', '');
+        browseTo('right', '');
+    }
+    function close(){
+        overlay.classList.remove('open');
+        closeCtx();
+    }
+
+    // ═══════════════════════════════════════════
+    // 通用浏览/渲染（left 和 right 共用逻辑）
+    // ═══════════════════════════════════════════
+
+    function browseTo(side, path){
+        if(side==='left') leftPath = path;
+        else rightPath = path;
+        send({type:'browse_dir', path: path||'', side});
+        const listEl = side==='left' ? leftList : rightList;
+        listEl.innerHTML = '<div class="fm-list-header"><span>名称</span><span>大小</span><span>修改时间</span></div><div class="fm-empty">加载中...</div>';
+    }
+
+    function getPath(side){ return side==='left' ? leftPath : rightPath; }
+    function getItems(side){ return side==='left' ? leftItems : rightItems; }
+    function getOtherPath(side){ return side==='left' ? rightPath : leftPath; }
+
+    function renderBreadcrumb(side, path){
+        const el = side==='left' ? leftBreadcrumb : rightBreadcrumb;
+        if(!path){el.innerHTML=`<span class="fm-bc-seg" data-path="" data-side="${side}">🖥 根目录</span>`;return}
+        const sep = path.includes('/') ? '/' : '\\';
+        const parts = path.split(/[\/\\]/).filter(Boolean);
+        let html = `<span class="fm-bc-seg" data-path="" data-side="${side}">🖥 根</span>`;
+        let acc = '';
+        parts.forEach((p,i)=>{
+            acc += (i===0&&/^[A-Za-z]:$/.test(p)) ? p+sep : (i===0?p:sep+p);
+            if(i===0&&/^[A-Za-z]:$/.test(p)){
+                html += `<span class="fm-bc-sep">›</span><span class="fm-bc-seg" data-path="${acc}" data-side="${side}">${p}${sep}</span>`;
+            } else {
+                html += `<span class="fm-bc-sep">›</span><span class="fm-bc-seg" data-path="${acc}" data-side="${side}">${p}</span>`;
+            }
+        });
+        el.innerHTML = html;
+    }
+
+    function renderList(side, items){
+        const listEl = side==='left' ? leftList : rightList;
+        if(side==='left') leftItems = items || [];
+        else rightItems = items || [];
+        const arr = side==='left' ? leftItems : rightItems;
+        arr.sort((a,b)=>{
+            if(a.is_dir&&!b.is_dir) return -1;
+            if(!a.is_dir&&b.is_dir) return 1;
+            return a.name.localeCompare(b.name);
+        });
+        let html = '<div class="fm-list-header"><span>名称</span><span>大小</span><span>修改时间</span></div>';
+        if(!arr.length){
+            html += '<div class="fm-empty">空目录</div>';
+        } else {
+            arr.forEach((item,i)=>{
+                const icon = item.is_dir ? '📁' : '📄';
+                const size = item.is_dir ? '-' : fmtSize(item.size);
+                const time = fmtTime(item.mtime);
+                html += `<div class="fm-item" data-idx="${i}" data-dir="${item.is_dir?1:0}" data-name="${item.name}" data-path="${item.path||''}" data-side="${side}" draggable="true"><div class="fm-item-name"><span class="fm-item-icon">${icon}</span><span title="${item.name}">${item.name}</span></div><span class="fm-item-size">${size}</span><span class="fm-item-time">${time}</span></div>`;
+            });
+        }
+        listEl.innerHTML = html;
+    }
+
+    // ═══════════════════════════════════════════
+    // TRANSFER QUEUE (拖拽复制反馈)
+    // ═══════════════════════════════════════════
+
+    function addTransfer(name, direction){
+        const id = ++xferId;
+        transfers.push({id, name, direction, progress:0, status:'active'});
+        renderQueue();
+        return id;
+    }
+    function updateTransfer(id, updates){
+        const t = transfers.find(x=>x.id===id);
+        if(t) Object.assign(t,updates);
+        renderQueue();
+    }
+    function renderQueue(){
+        const active = transfers.filter(t=>t.status!=='done'||Date.now()-t._doneAt<5000);
+        if(!active.length){queueEl.style.display='none';return}
+        queueEl.style.display='';
+        queueCount.textContent = active.length;
+        queueList.innerHTML = active.map(t=>{
+            const arrow = t.direction==='copy' ? '📋' : (t.direction==='up' ? '⬆' : '⬇');
+            const dirTag = t.direction==='copy'
+                ? '<span class="dir-tag up">复制</span>'
+                : t.direction==='up'
+                ? '<span class="dir-tag up">上传</span>'
+                : '<span class="dir-tag down">下载</span>';
+            const fillCls = t.status==='done'?'done':t.status==='error'?'err':'';
+            const statusText = t.status==='done'?'完成':t.status==='error'?'失败':'进行中';
+            return `<div class="fm-xfer"><span class="icon">${arrow}</span>${dirTag}<div class="info"><div class="fname">${t.name}</div></div><div class="bar"><div class="bar-fill ${fillCls}" style="width:${t.status==='done'?100:50}%"></div></div><span class="status">${statusText}</span></div>`;
+        }).join('');
+    }
+
+    // ═══════════════════════════════════════════
+    // COPY: 跨栏拖拽 = agent 内部复制
+    // ═══════════════════════════════════════════
+
+    function copyToOtherSide(item, fromSide){
+        const srcPath = item.path || pathJoin(getPath(fromSide), item.name);
+        const destDir = getOtherPath(fromSide);
+        if(!destDir){toast('对面栏还在根目录，请先进入一个目录','warn');return}
+        const tid = addTransfer(item.name, 'copy');
+        send({type:'copy_file', src: srcPath, dest_dir: destDir});
+        return tid;
+    }
+
+    // ═══════════════════════════════════════════
+    // UPLOAD: 从浏览器拖入文件到面板 → 上传到远程
+    // ═══════════════════════════════════════════
+
+    function uploadFileToRemote(file, dirPath){
+        if(!dirPath){toast('请先进入一个目录','warn');return}
+        const tid = addTransfer(file.name, 'up');
+        const reader = new FileReader();
+        reader.onload = ()=>{
+            const b64 = reader.result.split(',')[1];
+            send({type:'upload_file', dir_path:dirPath, name:file.name, data:b64});
+        };
+        reader.onerror = ()=>{
+            updateTransfer(tid,{status:'error'});
+            toast(`读取失败: ${file.name}`,'err');
+        };
+        reader.readAsDataURL(file);
+        return tid;
+    }
+
+    // ── download (browser save) ──
+    function downloadToBrowser(item, side){
+        if(!item||item.is_dir) return;
+        const fullPath = item.path || pathJoin(getPath(side), item.name);
+        const tid = addTransfer(item.name, 'down');
+        send({type:'download_file', path:fullPath});
+    }
+
+    // ── mkdir ──
+    function mkdirPrompt(side){
+        const curPath = getPath(side);
+        if(!curPath){toast('请先进入一个目录','warn');return}
+        const name = prompt('新建文件夹名称:');
+        if(!name||!name.trim()) return;
+        const fullPath = pathJoin(curPath, name.trim());
+        send({type:'create_dir', path:fullPath});
+    }
+
+    // ── delete ──
+    function deleteItem(item, side){
+        if(!item) return;
+        if(!confirm(`确定删除 "${item.name}" 吗？`)) return;
+        const fullPath = item.path || pathJoin(getPath(side), item.name);
+        send({type:'delete_item', path:fullPath});
+    }
+
+    // ═══════════════════════════════════════════
+    // CONTEXT MENU
+    // ═══════════════════════════════════════════
+
+    function showCtx(e, item, side){
+        e.preventDefault();
+        ctxTarget = item;
+        ctxSide = side;
+        ctxMenu.classList.remove('open');
+        ctxMenu.style.left = e.clientX+'px';
+        ctxMenu.style.top = e.clientY+'px';
+        // show/hide items
+        ctxMenu.querySelectorAll('[data-action="open"]').forEach(el=>{el.style.display=item.is_dir?'':'none'});
+        ctxMenu.querySelectorAll('[data-action="copy-to-other"]').forEach(el=>{el.style.display=''});
+        ctxMenu.querySelectorAll('[data-action="download-browser"]').forEach(el=>{el.style.display=item.is_dir?'none':''});
+        ctxMenu.classList.add('open');
+    }
+    function closeCtx(){
+        ctxMenu.classList.remove('open');
+        ctxTarget=null;
+        ctxSide='';
+    }
+
+    // ═══════════════════════════════════════════
+    // WS MESSAGE HANDLERS
+    // ═══════════════════════════════════════════
+
+    function onDirContent(m){
+        const side = m.side || 'right';
+        const path = m.path || '';
+        if(side==='left') leftPath = path;
+        else rightPath = path;
+        renderBreadcrumb(side, path);
+        renderList(side, m.items);
+        // disable mkdir on root
+        const isRoot = !path;
+        const mkdirBtn = side==='left' ? $('fm-left-mkdir') : $('fm-right-mkdir');
+        mkdirBtn.disabled = isRoot;
+        mkdirBtn.title = isRoot ? '请先进入某个驱动器/目录' : '新建文件夹';
+    }
+    function onFileSaved(m){
+        if(m.success){
+            toast(`✓ 已保存: ${m.path}`,'ok');
+            const t = transfers.find(x=>x.direction==='up'&&x.status==='active');
+            if(t){t.status='done';t.progress=100;t._doneAt=Date.now();renderQueue()}
+            // refresh both panes
+            browseTo('left', leftPath);
+            browseTo('right', rightPath);
+        } else {
+            toast(`保存失败: ${m.error||''}`,'err');
+            const t = transfers.find(x=>x.direction==='up'&&x.status==='active');
+            if(t){t.status='error';renderQueue()}
+        }
+    }
+    function onFileCopied(m){
+        if(m.success){
+            toast(`✓ 已复制: ${m.name}`,'ok');
+            const t = transfers.find(x=>x.direction==='copy'&&x.status==='active');
+            if(t){t.status='done';t.progress=100;t._doneAt=Date.now();renderQueue()}
+            // refresh both panes
+            browseTo('left', leftPath);
+            browseTo('right', rightPath);
+        } else {
+            toast(`复制失败: ${m.error||''}`,'err');
+            const t = transfers.find(x=>x.direction==='copy'&&x.status==='active');
+            if(t){t.status='error';renderQueue()}
+        }
+    }
+    function onFileData(m){
+        const t = transfers.find(x=>x.direction==='down'&&x.status==='active');
+        if(t){t.status='done';t.progress=100;t._doneAt=Date.now();renderQueue()}
+        try{
+            const binary = atob(m.data);
+            const bytes = new Uint8Array(binary.length);
+            for(let i=0;i<binary.length;i++) bytes[i]=binary.charCodeAt(i);
+            const blob = new Blob([bytes]);
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href=url;a.download=m.name;document.body.appendChild(a);a.click();a.remove();
+            URL.revokeObjectURL(url);
+            toast(`✓ 已下载: ${m.name}`,'ok');
+        }catch(e){
+            toast(`下载失败: ${e.message}`,'err');
+        }
+    }
+    function onDirCreated(m){
+        toast('✓ 文件夹已创建','ok');
+        browseTo('left', leftPath);
+        browseTo('right', rightPath);
+    }
+    function onItemDeleted(m){
+        toast('✓ 已删除','ok');
+        browseTo('left', leftPath);
+        browseTo('right', rightPath);
+    }
+
+    // ═══════════════════════════════════════════
+    // EVENT BINDINGS
+    // ═══════════════════════════════════════════
+
+    // open/close
+    btnFile.addEventListener('click', open);
+    $('fm-close').addEventListener('click', close);
+    overlay.addEventListener('click', e=>{if(e.target===overlay)close()});
+
+    // mkdir & refresh for both sides
+    $('fm-left-mkdir').addEventListener('click', ()=>mkdirPrompt('left'));
+    $('fm-left-refresh').addEventListener('click', ()=>browseTo('left', leftPath));
+    $('fm-right-mkdir').addEventListener('click', ()=>mkdirPrompt('right'));
+    $('fm-right-refresh').addEventListener('click', ()=>browseTo('right', rightPath));
+
+    // breadcrumb click (both sides)
+    [leftBreadcrumb, rightBreadcrumb].forEach(el=>{
+        el.addEventListener('click',e=>{
+            const seg = e.target.closest('.fm-bc-seg');
+            if(!seg) return;
+            browseTo(seg.dataset.side, seg.dataset.path);
+        });
+    });
+
+    // list dblclick, click, contextmenu (both sides)
+    function bindListEvents(listEl, side){
+        listEl.addEventListener('dblclick',e=>{
+            const row = e.target.closest('.fm-item');
+            if(!row) return;
+            const idx = +row.dataset.idx;
+            const items = getItems(side);
+            const item = items[idx];
+            if(!item) return;
+            if(item.is_dir){
+                browseTo(side, item.path || pathJoin(getPath(side), item.name));
+            }
+        });
+        listEl.addEventListener('click',e=>{
+            const row = e.target.closest('.fm-item');
+            listEl.querySelectorAll('.fm-item.selected').forEach(el=>el.classList.remove('selected'));
+            if(row) row.classList.add('selected');
+        });
+        listEl.addEventListener('contextmenu',e=>{
+            const row = e.target.closest('.fm-item');
+            if(!row) return;
+            const idx = +row.dataset.idx;
+            const items = getItems(side);
+            const item = items[idx];
+            if(item) showCtx(e, item, side);
+        });
+    }
+    bindListEvents(leftList, 'left');
+    bindListEvents(rightList, 'right');
+
+    // context menu actions
+    ctxMenu.addEventListener('click',e=>{
+        const act = e.target.closest('.fm-ctx-item');
+        if(!act||!ctxTarget) return;
+        const action = act.dataset.action;
+        if(action==='open'&&ctxTarget.is_dir) browseTo(ctxSide, ctxTarget.path || pathJoin(getPath(ctxSide),ctxTarget.name));
+        else if(action==='copy-to-other') copyToOtherSide(ctxTarget, ctxSide);
+        else if(action==='download-browser') downloadToBrowser(ctxTarget, ctxSide);
+        else if(action==='delete') deleteItem(ctxTarget, ctxSide);
+        closeCtx();
+    });
+
+    document.addEventListener('click',e=>{
+        if(!e.target.closest('.fm-ctx')) closeCtx();
+    });
+
+    // ═══════════════════════════════════════════
+    // DRAG & DROP (cross-pane = copy)
+    // ═══════════════════════════════════════════
+
+    let dragData = null;  // {side, item}
+
+    function bindDragSource(listEl, side){
+        listEl.addEventListener('dragstart',e=>{
+            const row = e.target.closest(`.fm-item[data-side="${side}"]`);
+            if(!row) return;
+            const idx = +row.dataset.idx;
+            const items = getItems(side);
+            const item = items[idx];
+            if(!item){e.preventDefault();return}
+            row.classList.add('dragging');
+            dragData = {side, item};
+            e.dataTransfer.effectAllowed = 'copy';
+            e.dataTransfer.setData('text/plain', item.name);
+        });
+        listEl.addEventListener('dragend',e=>{
+            listEl.querySelectorAll('.dragging').forEach(el=>el.classList.remove('dragging'));
+            dragData = null;
+        });
+    }
+    bindDragSource(leftList, 'left');
+    bindDragSource(rightList, 'right');
+
+    function bindDropTarget(paneEl, listEl, side){
+        paneEl.addEventListener('dragover',e=>{
+            // accept from opposite side
+            if(dragData && dragData.side !== side){
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'copy';
+                paneEl.classList.add('drag-hover');
+                const row = e.target.closest('.fm-item[data-dir="1"]');
+                listEl.querySelectorAll('.drop-target').forEach(el=>el.classList.remove('drop-target'));
+                if(row) row.classList.add('drop-target');
+                return;
+            }
+            // also accept native file drops from OS
+            if(e.dataTransfer.types.includes('Files')){
+                e.preventDefault();
+                paneEl.classList.add('drag-hover');
+            }
+        });
+        paneEl.addEventListener('dragleave',e=>{
+            if(!paneEl.contains(e.relatedTarget)){
+                paneEl.classList.remove('drag-hover');
+                listEl.querySelectorAll('.drop-target').forEach(el=>el.classList.remove('drop-target'));
+            }
+        });
+        paneEl.addEventListener('drop',e=>{
+            e.preventDefault();
+            paneEl.classList.remove('drag-hover');
+            listEl.querySelectorAll('.drop-target').forEach(el=>el.classList.remove('drop-target'));
+
+            if(dragData && dragData.side !== side){
+                // cross-pane drag = remote copy
+                const item = dragData.item;
+
+                // determine target: dropped onto a dir row → copy into that dir
+                let destDir = getPath(side);
+                const row = e.target.closest('.fm-item[data-dir="1"]');
+                if(row){
+                    const idx = +row.dataset.idx;
+                    const items = getItems(side);
+                    const target = items[idx];
+                    if(target) destDir = target.path || pathJoin(getPath(side), target.name);
+                }
+
+                if(!destDir){toast('请先进入一个目录','warn');return}
+                copyToOtherSide(item, dragData.side);
+                dragData = null;
+                return;
+            }
+
+            // native file drop (from OS desktop)
+            const files = [...e.dataTransfer.files];
+            if(files.length){
+                const destDir = getPath(side);
+                if(!destDir){toast('请先进入一个目录','warn');return}
+                files.forEach(f=>uploadFileToRemote(f, destDir));
+                toast(`开始上传 ${files.length} 个文件`,'ok');
+            }
+        });
+    }
+    bindDropTarget(leftPane, leftList, 'left');
+    bindDropTarget(rightPane, rightList, 'right');
+
+    // Escape key
+    document.addEventListener('keydown',e=>{
+        if(e.key==='Escape'&&overlay.classList.contains('open')){close();e.stopPropagation()}
+    });
+
+    // auto-clean done transfers
+    setInterval(()=>{
+        const now = Date.now();
+        transfers = transfers.filter(t=>!(t.status==='done'&&t._doneAt&&now-t._doneAt>8000));
+        renderQueue();
+    },3000);
+
+    return {open,close,uploadFileToRemote,onDirContent,onFileSaved,onFileData,onFileCopied,onDirCreated,onItemDeleted};
+})();
+
+// ═══════════════════════════════════════════════════
+// ═══ 设备管理 (DEV) — localStorage 本地存储 ═══
+// ═══════════════════════════════════════════════════
+const DEV = (()=>{
+    const STORE_KEY = 'rd-devices';
+    const listEl = $('dev-list');
+    const countEl = $('dev-count');
+    const formArea = $('dev-form-area');
+    let editingId = null;
+
+    function load(){ try{return JSON.parse(localStorage.getItem(STORE_KEY)||'[]')}catch{return[]} }
+    function save(arr){ localStorage.setItem(STORE_KEY, JSON.stringify(arr)) }
+    function genId(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,6) }
+
+    function render(){
+        const devs = load();
+        countEl.textContent = devs.length + ' 台设备';
+        if(!devs.length){
+            listEl.innerHTML = '<div class="dev-empty">📭 还没有保存的设备<br><span style="font-size:11px">点击上方「添加设备」开始</span></div>';
+            return;
+        }
+        listEl.innerHTML = devs.map(d=>{
+            const lastStr = d.lastConnected ? fmtTimeAgo(d.lastConnected) : '从未连接';
+            return `<div class="dev-row" data-id="${d.id}">
+                <span class="dev-icon">🖥️</span>
+                <div class="dev-info">
+                    <div class="dev-name">${esc(d.name)}</div>
+                    <div class="dev-host">${esc(d.host)}</div>
+                    ${d.note?`<div class="dev-note">${esc(d.note)}</div>`:''}
+                </div>
+                <span class="dev-last">${lastStr}</span>
+                <div class="dev-actions">
+                    <button class="dev-act" data-act="edit" title="编辑">✏️</button>
+                    <button class="dev-act del" data-act="del" title="删除">🗑</button>
+                </div>
+            </div>`;
+        }).join('');
+    }
+
+    function esc(s){return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
+
+    function fmtTimeAgo(ts){
+        const diff = Math.floor((Date.now()-ts)/1000);
+        if(diff<60) return '刚刚';
+        if(diff<3600) return Math.floor(diff/60)+'分钟前';
+        if(diff<86400) return Math.floor(diff/3600)+'小时前';
+        return Math.floor(diff/86400)+'天前';
+    }
+
+    function showForm(dev){
+        editingId = dev ? dev.id : null;
+        $('dev-f-name').value = dev ? dev.name : '';
+        $('dev-f-host').value = dev ? dev.host : '';
+        $('dev-f-note').value = dev ? (dev.note||'') : '';
+        formArea.style.display = '';
+        $('dev-f-name').focus();
+    }
+    function hideForm(){
+        formArea.style.display = 'none';
+        editingId = null;
+    }
+
+    function saveDevice(){
+        const name = $('dev-f-name').value.trim();
+        const host = $('dev-f-host').value.trim();
+        const note = $('dev-f-note').value.trim();
+        if(!name){toast('请输入设备名称','err');$('dev-f-name').focus();return}
+        if(!host){toast('请输入设备地址','err');$('dev-f-host').focus();return}
+
+        const devs = load();
+        if(editingId){
+            const idx = devs.findIndex(d=>d.id===editingId);
+            if(idx>=0){devs[idx].name=name;devs[idx].host=host;devs[idx].note=note}
+        } else {
+            devs.push({id:genId(), name, host, note, createdAt:Date.now(), lastConnected:null});
+        }
+        save(devs);
+        hideForm();
+        render();
+        toast(editingId?'设备已更新 ✓':'设备已添加 ✓','ok');
+    }
+
+    function connectDevice(id){
+        const devs = load();
+        const d = devs.find(x=>x.id===id);
+        if(!d) return;
+        // 更新最近连接时间
+        d.lastConnected = Date.now();
+        save(devs);
+        render();
+        // 填入连接信息
+        inpHost.value = d.host;
+        inpPwd.focus();
+        ovDevices.classList.remove('open');
+        toast(`已选择: ${d.name}`,'ok');
+    }
+
+    function deleteDevice(id){
+        if(!confirm('确定删除此设备？')) return;
+        const devs = load().filter(d=>d.id!==id);
+        save(devs);
+        render();
+        toast('设备已删除','ok');
+    }
+
+    function editDevice(id){
+        const d = load().find(x=>x.id===id);
+        if(d) showForm(d);
+    }
+
+    // event bindings
+    $('btn-dev-add').addEventListener('click',()=>showForm(null));
+    $('dev-f-cancel').addEventListener('click', hideForm);
+    $('dev-f-save').addEventListener('click', saveDevice);
+    // Enter 保存
+    ['dev-f-name','dev-f-host','dev-f-note'].forEach(id=>{
+        $(id).addEventListener('keydown',e=>{if(e.key==='Enter')saveDevice()});
+    });
+    // 列表点击事件
+    listEl.addEventListener('click',e=>{
+        const act = e.target.closest('.dev-act');
+        if(act){
+            e.stopPropagation();
+            const row = act.closest('.dev-row');
+            const id = row.dataset.id;
+            if(act.dataset.act==='del') deleteDevice(id);
+            else if(act.dataset.act==='edit') editDevice(id);
+            return;
+        }
+        const row = e.target.closest('.dev-row');
+        if(row) connectDevice(row.dataset.id);
+    });
+
+    // open/close
+    btnDevices.addEventListener('click',()=>{render();ovDevices.classList.add('open');hideForm()});
+    $('x-devices').addEventListener('click',()=>ovDevices.classList.remove('open'));
+    ovDevices.addEventListener('click',e=>{if(e.target===ovDevices)ovDevices.classList.remove('open')});
+
+    return {render};
+})();
+
+// ═══════════════════════════════════════════════════
+// ═══ 设置面板：密码修改 & 设备名修改 ═══
+// ═══════════════════════════════════════════════════
+(()=>{
+    // ── 密码编辑 ──
+    const pwdInp=$('inp-agent-pwd'),pwdEdit=$('btn-pwd-edit'),pwdSave=$('btn-pwd-save'),pwdCancel=$('btn-pwd-cancel');
+    let pwdBak='';
+    pwdEdit.addEventListener('click',()=>{pwdBak=pwdInp.value;pwdInp.readOnly=false;pwdInp.focus();pwdEdit.style.display='none';pwdSave.style.display='';pwdCancel.style.display=''});
+    pwdCancel.addEventListener('click',()=>{pwdInp.value=pwdBak;pwdInp.readOnly=true;pwdEdit.style.display='';pwdSave.style.display='none';pwdCancel.style.display='none'});
+    pwdSave.addEventListener('click',()=>{
+        const v=pwdInp.value.trim();
+        if(!v){toast('密码不能为空','err');return}
+        send({type:'change_password',password:v});
+        pwdInp.readOnly=true;pwdEdit.style.display='';pwdSave.style.display='none';pwdCancel.style.display='none';
+    });
+    pwdInp.addEventListener('keydown',e=>{if(e.key==='Enter'&&!pwdInp.readOnly)pwdSave.click()});
+
+    // ── 设备名编辑 ──
+    const nameInp=$('inp-device-name'),nameEdit=$('btn-name-edit'),nameSave=$('btn-name-save'),nameCancel=$('btn-name-cancel');
+    let nameBak='';
+    nameEdit.addEventListener('click',()=>{nameBak=nameInp.value;nameInp.readOnly=false;nameInp.focus();nameEdit.style.display='none';nameSave.style.display='';nameCancel.style.display=''});
+    nameCancel.addEventListener('click',()=>{nameInp.value=nameBak;nameInp.readOnly=true;nameEdit.style.display='';nameSave.style.display='none';nameCancel.style.display='none'});
+    nameSave.addEventListener('click',()=>{
+        const v=nameInp.value.trim();
+        if(!v){toast('设备名不能为空','err');return}
+        send({type:'set_device_name',name:v});
+        nameInp.readOnly=true;nameEdit.style.display='';nameSave.style.display='none';nameCancel.style.display='none';
+    });
+    nameInp.addEventListener('keydown',e=>{if(e.key==='Enter'&&!nameInp.readOnly)nameSave.click()});
+})();
+
+})();
+</script>
+</body>
+</html>
