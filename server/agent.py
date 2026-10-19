@@ -287,6 +287,23 @@ class InputSimulator:
         else:
             logger.info("🔓 安全释放所有修饰键")
 
+    def type_text(self, text: str):
+        """用 KEYEVENTF_UNICODE 逐字符输入文本（支持中文/Emoji/任何 Unicode）"""
+        if not HAS_WIN32 or not text:
+            return
+        for ch in text:
+            code = ord(ch)
+            # keydown
+            inp = INPUT(); inp.type = INPUT_KEYBOARD
+            inp.union.ki.wScan = code
+            inp.union.ki.dwFlags = KEYEVENTF_UNICODE
+            self._send_input(inp)
+            # keyup
+            inp = INPUT(); inp.type = INPUT_KEYBOARD
+            inp.union.ki.wScan = code
+            inp.union.ki.dwFlags = KEYEVENTF_UNICODE | KEYEVENTF_KEYUP
+            self._send_input(inp)
+
 
 # ─── 剪贴板 ──────────────────────────────────────────
 
@@ -790,6 +807,7 @@ class RemoteDesktopServer:
         elif t == "mouse_scroll":self.input_sim.mouse_scroll(data.get("delta", 0))
         elif t == "key_down":    self.input_sim.key_event(data["key"], "down")
         elif t == "key_up":      self.input_sim.key_event(data["key"], "up")
+        elif t == "ime_text":    self.input_sim.type_text(data.get("text", ""))
 
     async def handle_control(self, ws, data: dict):
         t = data.get("type")
@@ -893,7 +911,7 @@ class RemoteDesktopServer:
                 try:
                     data = json.loads(message)
                     t = data.get("type", "")
-                    if t.startswith("mouse_") or t.startswith("key_"):
+                    if t.startswith("mouse_") or t.startswith("key_") or t == "ime_text":
                         self.handle_input(data)
                     else:
                         await self.handle_control(ws, data)

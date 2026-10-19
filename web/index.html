@@ -557,9 +557,26 @@ document.addEventListener('keydown',e=>{
     if(e.key==='F11'){e.preventDefault();toggleFs();return}
     if(e.key==='Escape'&&document.body.classList.contains('fs')){document.body.classList.remove('fs');return}
     if((e.ctrlKey||e.metaKey)&&['r','l','w','t','n'].includes(e.key.toLowerCase()))return;
+    if(e.key==='Process'||e.isComposing)return; // 输入法组合中，不发送
     e.preventDefault();send({type:'key_down',key:e.key});
 });
-document.addEventListener('keyup',e=>{if(!ws||ws.readyState!==1)return;if(['F11','Escape'].includes(e.key))return;e.preventDefault();send({type:'key_up',key:e.key})});
+document.addEventListener('keyup',e=>{if(!ws||ws.readyState!==1)return;if(['F11','Escape'].includes(e.key))return;if(e.key==='Process'||e.isComposing)return;e.preventDefault();send({type:'key_up',key:e.key})});
+
+// 中文输入法支持：compositionend 时发送完整文本，agent 端用 Unicode 逐字输入
+// 需要一个隐藏的 input 接收 IME 输入
+const imeInput=document.createElement('input');
+imeInput.style.cssText='position:fixed;left:-9999px;top:-9999px;opacity:0;pointer-events:none';
+document.body.appendChild(imeInput);
+imeInput.addEventListener('compositionend',e=>{
+    const text=e.target.value;
+    if(text&&ws&&ws.readyState===1){
+        send({type:'ime_text',text:text});
+    }
+    e.target.value='';
+});
+// canvas 获得焦点时将输入重定向到隐藏 input
+canvas.addEventListener('click',()=>imeInput.focus());
+canvas.addEventListener('mousedown',()=>imeInput.focus());
 
 function toggleFs(){document.body.classList.toggle('fs');document.body.classList.contains('fs')?document.documentElement.requestFullscreen?.():document.exitFullscreen?.()}
 
