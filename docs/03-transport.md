@@ -102,8 +102,11 @@ ws.onmessage = (e) => {
 | `set_monitor` | JSON | `{type, index}` |
 | `get_clipboard` / `set_clipboard` | JSON | 剪贴板操作 |
 | `ping` | JSON | `{type, ts}` — 延迟测量 |
+| `ime_text` | JSON | `{type, text}` — 中文输入法完成文本 |
 | `browse_dir` | JSON | `{type, path, side}` |
 | `change_password` | JSON | `{type, password}` |
+| `set_device_name` | JSON | `{type, name}` |
+| `get_agent_info` | JSON | `{type}` — 请求被控端配置信息 |
 
 ## 带宽分析
 

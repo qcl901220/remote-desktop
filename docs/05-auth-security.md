@@ -129,7 +129,9 @@ async function hmacSha256(key, message) {
 - ✅ `http://localhost` 或 `http://127.0.0.1`
 - ❌ `http://192.168.1.100`（局域网 IP，非安全上下文）
 
-我们的解决方案：Agent 内嵌 HTTP 服务，浏览器从 Agent 的 IP 加载页面——浏览器把同源视为可信，`crypto.subtle` 可以工作。
+**这是一个实际踩过的坑**：通过局域网 IP 访问时，`crypto.subtle` 为 `undefined`，SHA-256 和 HMAC 计算静默失败，认证永远通不过。
+
+我们的解决方案：**纯 JavaScript SHA-256/HMAC-SHA256 回退实现**。优先使用 `crypto.subtle`（更快），不可用时自动降级到纯 JS 实现。注意 JS 位运算产生 32 位有符号整数，转十六进制时必须用 `(w >>> 0).toString(16)` 避免负数输出。
 
 ## 密码持久化
 

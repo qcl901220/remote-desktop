@@ -37,8 +37,8 @@ TODO: 在这里放一张效果截图或 GIF
 │  ④ 输入模拟         │ ←────────────────────── │  ⑦ 坐标映射         │
 │    (SendInput API) │      WebSocket          │    canvas → 远程屏幕 │
 │                    │                        │                    │
-│  🔐 HMAC-SHA256    │   Challenge-Response    │  🔐 Web Crypto API │
-│     认证           │ ←────────────────────→  │     认证            │
+│  🔐 HMAC-SHA256    │   Challenge-Response    │  🔐 SHA-256 纯 JS   │
+│     认证           │ ←────────────────────→  │    (兼容非 HTTPS)   │
 └────────────────────┘                        └────────────────────┘
 ```
 
@@ -64,9 +64,11 @@ TODO: 在这里放一张效果截图或 GIF
 | 🖥️ 多显示器 | 在线切换被控端的多个显示器 |
 | 🎛️ 画质调节 | 实时调整帧率 (1-60fps) 和 JPEG 质量 (10-95) |
 | 📋 剪贴板同步 | 双向文本剪贴板同步 |
-| 📁 文件管理器 | 双栏远程文件浏览、拖拽复制、上传下载 |
+| 📁 文件传输 | 左栏本地拖拽上传，右栏远程文件浏览下载 |
 | 💻 设备管理 | 保存常用设备（名称/IP/备注），一键连接 |
-| 🔑 密码管理 | config.json 持久化 + 运行时修改连接密码 |
+| 🔑 密码管理 | config.json 持久化 + 运行时可修改连接密码 |
+| 🇨🇳 中文输入 | IME 输入法支持，compositionend + KEYEVENTF_UNICODE |
+| ⛶ 浮动工具栏 | 全屏模式鼠标移到顶部自动呼出工具栏 |
 | 🔄 自动重连 | 网络波动 5 秒自动重连 |
 | 📊 实时监控 | FPS、延迟、带宽实时显示 |
 | ⛶ 全屏模式 | F11 一键全屏 |
@@ -258,7 +260,7 @@ remote-desktop/
 | 网络通信 | `websockets` | 异步 WebSocket，API 简洁 |
 | 输入模拟 | `ctypes` + Win32 API | 零依赖、可靠、支持 Unicode |
 | 控制端渲染 | HTML5 Canvas | 浏览器原生，零依赖 |
-| 认证 | HMAC-SHA256 | 密码学标准，浏览器 Web Crypto API 原生支持 |
+| 认证 | HMAC-SHA256 | 密码学标准，纯 JS 实现 + Web Crypto API 双模式 |
 
 ## 📜 License
 

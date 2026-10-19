@@ -141,15 +141,63 @@ async def unregister(self, ws):
         self.input_sim.release_all_keys()
 ```
 
+## 中文输入法支持 (IME)
+
+远程桌面的中文输入是一个经典难题。`SendInput` 发送的 keydown/keyup 事件会**绕过输入法**——在远端，按 `n-i-h-a-o` 只会输入英文字母，不会触发拼音输入法。
+
+### 我们的方案：compositionend + KEYEVENTF_UNICODE
+
+```
+浏览器端                                Agent 端
+  │                                       │
+  │ 用户用拼音输入法打 "nihao"              │
+  │ 输入法弹出候选，选择"你好"              │
+  │                                       │
+  │ compositionend 事件触发               │
+  │ 捕获完整文本 "你好"                    │
+  │                                       │
+  │ ── {type:"ime_text", text:"你好"} ──→ │
+  │                                       │ type_text("你好")
+  │                                       │ for ch in "你好":
+  │                                       │   SendInput(UNICODE, ord(ch))
+  │                                       │   # 你=0x4F60, 好=0x597D
+```
+
+关键技巧：
+- 浏览器端创建一个**隐藏的 `<input>`** 元素接收 IME 输入（canvas 不触发 compositionend）
+- canvas 点击时自动将焦点转移到隐藏 input
+- `keydown` 事件中过滤 `e.key === 'Process'` 和 `e.isComposing`，避免干扰输入法
+- Agent 端用 `KEYEVENTF_UNICODE` 逐字符输入，支持任意 Unicode（中文/日文/Emoji）
+
+```python
+def type_text(self, text: str):
+    for ch in text:
+        code = ord(ch)
+        # keydown
+        inp.union.ki.wScan = code
+        inp.union.ki.dwFlags = KEYEVENTF_UNICODE
+        SendInput(...)
+        # keyup
+        inp.union.ki.dwFlags = KEYEVENTF_UNICODE | KEYEVENTF_KEYUP
+        SendInput(...)
+```
+
+### 局限
+
+这个方案的中文是在**控制端完成拼音→汉字转换**，然后把最终汉字发到远端。用户看不到远端的输入法候选框——因为远端的输入法根本没被激活。对于日常打字足够了，但无法使用远端特有的词库或专业输入法。
+
 ## 代码位置
 
 - 输入模拟：`server/agent.py` — `InputSimulator` 类
+- 中文文本输入：`server/agent.py` — `InputSimulator.type_text()` 方法
+- IME 事件捕获：`web/index.html` — `compositionend` 监听 + 隐藏 input
 - 坐标映射（浏览器侧）：`web/index.html` — `rXY(e)` 函数
 - 按键追踪：`server/agent.py` — `_pressed_keys` 集合
 
 ## 商业产品怎么做的？
 
 - **低级驱动注入**：一些产品使用内核级驱动（而非用户态 SendInput）来模拟输入，可以在更多场景下工作（如游戏全屏、安全桌面）
-- **输入法兼容**：处理 IME 输入法的组合状态（候选窗口、拼音串）
+- **输入法兼容**：处理 IME 输入法的组合状态（候选窗口、拼音串），让用户直接使用远端的输入法
+- **锁屏输入**：通过 Session 0 服务在 Secure Desktop 上注入输入，普通进程的 SendInput 在锁屏时被屏蔽
 - **游戏手柄透传**：转发 Xbox/PlayStation 控制器输入
 - **多点触控**：处理触屏设备的多指手势
