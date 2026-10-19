@@ -102,6 +102,7 @@ class ScreenCapture:
         self._last_frame: Optional[bytes] = None
         self.stats_total = 0
         self.stats_skipped = 0
+        self._force_frame_counter = 0  # 强制关键帧计数器
 
     @property
     def monitors(self) -> list:
@@ -137,12 +138,21 @@ class ScreenCapture:
         screenshot = self.sct.grab(monitor)
         raw = screenshot.bgra
         self.stats_total += 1
+        self._force_frame_counter += 1
 
+        # 差帧检测：采样哈希比较
         step = max(1, len(raw) // 10000)
         frame_hash = hashlib.md5(raw[::step]).digest()
-        if frame_hash == self._last_hash and self._last_frame is not None:
+
+        # 每 30 帧强制发送一个关键帧（约每秒 1 帧），防止画面完全卡住
+        force = self._force_frame_counter >= 30
+
+        if frame_hash == self._last_hash and self._last_frame is not None and not force:
             self.stats_skipped += 1
             return None
+
+        if force:
+            self._force_frame_counter = 0
 
         self._last_hash = frame_hash
         img = Image.frombytes("RGB", screenshot.size, raw, "raw", "BGRX")
