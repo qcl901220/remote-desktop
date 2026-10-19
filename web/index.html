@@ -87,7 +87,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-seri
 @keyframes slideIn{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:none}}
 
 /* ═══ 全屏 ═══ */
-body.fs .tb,body.fs .sbar{display:none!important}
+body.fs .tb{position:fixed;top:-42px;left:0;right:0;z-index:999;transition:top .25s ease}
+body.fs .tb.peek{top:0}
+body.fs .sbar{display:none!important}
 
 /* ═══ 文件管理器 ═══ */
 .fm-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:250;align-items:center;justify-content:center}
@@ -560,6 +562,14 @@ document.addEventListener('keydown',e=>{
 document.addEventListener('keyup',e=>{if(!ws||ws.readyState!==1)return;if(['F11','Escape'].includes(e.key))return;e.preventDefault();send({type:'key_up',key:e.key})});
 
 function toggleFs(){document.body.classList.toggle('fs');document.body.classList.contains('fs')?document.documentElement.requestFullscreen?.():document.exitFullscreen?.()}
+
+// 全屏模式：鼠标移到顶部呼出工具栏
+const tb=document.querySelector('.tb');
+document.addEventListener('mousemove',e=>{
+    if(!document.body.classList.contains('fs'))return;
+    if(e.clientY<=8){tb.classList.add('peek')}
+    else if(e.clientY>50&&!tb.matches(':hover')){tb.classList.remove('peek')}
+});
 
 // ─── 设置面板 ───
 let qD=null,fD=null;
