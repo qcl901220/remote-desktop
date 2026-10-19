@@ -162,6 +162,14 @@ body.fs .tb,body.fs .sbar{display:none!important}
 .fm-ctx-item.danger{color:var(--red)}
 .fm-ctx-sep{height:1px;background:var(--border);margin:3px 0}
 
+/* ═══ 本地文件拖拽区 ═══ */
+.fm-local-drop{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;border:3px dashed var(--border);border-radius:8px;margin:14px;transition:all .2s;background:var(--bg)}
+.fm-local-drop.drag-active{border-color:var(--accent);background:rgba(88,166,255,.06)}
+.fm-local-drop-icon{font-size:48px;margin-bottom:8px;opacity:.6}
+.fm-local-drop-text{font-size:14px;color:var(--text);font-weight:600}
+.fm-local-drop-sub{font-size:11px;color:var(--dim);margin-top:4px}
+.fm-local-queue{overflow-y:auto;max-height:200px;border-top:1px solid var(--border)}
+
 /* ═══ 设备管理面板 ═══ */
 .dev-panel{width:520px}
 .dev-list{max-height:320px;overflow-y:auto}
@@ -304,25 +312,26 @@ body.fs .tb,body.fs .sbar{display:none!important}
         <button class="fm-close" id="fm-close">✕</button>
     </div>
     <div class="fm-main">
-        <!-- 左栏：远程文件浏览（独立路径） -->
+        <!-- 左栏：本地（拖入上传 / 下载列表） -->
         <div class="fm-pane" id="fm-left-pane">
             <div class="fm-pane-head">
-                <span class="fm-pane-title">📂 左栏</span>
-                <div class="fm-pane-actions">
-                    <button class="fm-btn" id="fm-left-mkdir" title="新建文件夹">📁+</button>
-                    <button class="fm-btn" id="fm-left-refresh" title="刷新">🔄</button>
-                </div>
+                <span class="fm-pane-title">💻 本地</span>
             </div>
-            <div class="fm-breadcrumb" id="fm-left-breadcrumb"></div>
-            <div class="fm-list" id="fm-left-list">
-                <div class="fm-list-header"><span>名称</span><span>大小</span><span>修改时间</span></div>
-                <div class="fm-empty">连接后浏览远程文件</div>
+            <div class="fm-local-drop" id="fm-local-drop">
+                <div class="fm-local-drop-icon">📂</div>
+                <div class="fm-local-drop-text">拖拽本地文件到此处上传</div>
+                <div class="fm-local-drop-sub">文件将上传到右侧当前目录</div>
+                <label class="fm-btn fm-btn-accent" style="margin-top:12px;cursor:pointer">📎 选择文件 <input type="file" id="fm-file-input" multiple style="display:none"></label>
+            </div>
+            <div class="fm-local-queue" id="fm-local-queue">
+                <div class="fm-queue-head">传输记录 <span class="count" id="fm-queue-count">0</span></div>
+                <div id="fm-queue-list"></div>
             </div>
         </div>
-        <!-- 右栏：远程文件浏览（独立路径） -->
+        <!-- 右栏：远程文件浏览 -->
         <div class="fm-pane" id="fm-right-pane">
             <div class="fm-pane-head">
-                <span class="fm-pane-title">📂 右栏</span>
+                <span class="fm-pane-title">🖥️ 远程</span>
                 <div class="fm-pane-actions">
                     <button class="fm-btn" id="fm-right-mkdir" title="新建文件夹">📁+</button>
                     <button class="fm-btn" id="fm-right-refresh" title="刷新">🔄</button>
@@ -335,19 +344,13 @@ body.fs .tb,body.fs .sbar{display:none!important}
             </div>
         </div>
     </div>
-    <!-- 传输队列 -->
-    <div class="fm-queue" id="fm-queue" style="display:none">
-        <div class="fm-queue-head">传输队列 <span class="count" id="fm-queue-count">0</span></div>
-        <div id="fm-queue-list"></div>
-    </div>
 </div>
 </div>
 
 <!-- 右键菜单 -->
 <div class="fm-ctx" id="fm-ctx">
     <div class="fm-ctx-item" data-action="open">📂 打开</div>
-    <div class="fm-ctx-item" data-action="copy-to-other">📋 复制到对面</div>
-    <div class="fm-ctx-item" data-action="download-browser">💾 下载到浏览器</div>
+    <div class="fm-ctx-item" data-action="download-browser">💾 下载到本地</div>
     <div class="fm-ctx-sep"></div>
     <div class="fm-ctx-item danger" data-action="delete">🗑 删除</div>
 </div>
@@ -599,30 +602,25 @@ const h=getHistory();if(h.length)inpHost.value=h[0];
 
 
 // ═══════════════════════════════════════════════════
-// ═══ 文件管理器 (FM) — 双栏远程浏览 + 拖拽复制 ═══
+// ═══════════════════════════════════════════════════
+// ═══ 文件管理器 (FM) — 左本地 + 右远程 ═══
 // ═══════════════════════════════════════════════════
 const FM = (()=>{
     const overlay = $('fm-overlay');
-    const leftPane = $('fm-left-pane');
-    const leftList = $('fm-left-list');
-    const leftBreadcrumb = $('fm-left-breadcrumb');
-    const rightPane = $('fm-right-pane');
+    const localDrop = $('fm-local-drop');
+    const fileInput = $('fm-file-input');
     const rightList = $('fm-right-list');
     const rightBreadcrumb = $('fm-right-breadcrumb');
-    const queueEl = $('fm-queue');
+    const rightPane = $('fm-right-pane');
     const queueList = $('fm-queue-list');
     const queueCount = $('fm-queue-count');
     const ctxMenu = $('fm-ctx');
 
-    // ── state (两栏各自独立) ──
-    let leftPath = '';
-    let leftItems = [];
-    let rightPath = '';
-    let rightItems = [];
+    let remotePath = '';
+    let remoteItems = [];
     let transfers = [];
     let xferId = 0;
     let ctxTarget = null;
-    let ctxSide = '';  // 'left' | 'right'
 
     // ── helpers ──
     function fmtSize(b){
@@ -645,435 +643,195 @@ const FM = (()=>{
     }
 
     // ── open / close ──
-    function open(){
-        overlay.classList.add('open');
-        browseTo('left', '');
-        browseTo('right', '');
-    }
-    function close(){
-        overlay.classList.remove('open');
-        closeCtx();
-    }
+    function open(){ overlay.classList.add('open'); browseTo(''); }
+    function close(){ overlay.classList.remove('open'); closeCtx(); }
 
-    // ═══════════════════════════════════════════
-    // 通用浏览/渲染（left 和 right 共用逻辑）
-    // ═══════════════════════════════════════════
-
-    function browseTo(side, path){
-        if(side==='left') leftPath = path;
-        else rightPath = path;
-        send({type:'browse_dir', path: path||'', side});
-        const listEl = side==='left' ? leftList : rightList;
-        listEl.innerHTML = '<div class="fm-list-header"><span>名称</span><span>大小</span><span>修改时间</span></div><div class="fm-empty">加载中...</div>';
+    // ═══ 右栏：远程文件浏览 ═══
+    function browseTo(path){
+        remotePath = path;
+        send({type:'browse_dir', path: path||'', side:'right'});
+        rightList.innerHTML = '<div class="fm-list-header"><span>名称</span><span>大小</span><span>修改时间</span></div><div class="fm-empty">加载中...</div>';
     }
 
-    function getPath(side){ return side==='left' ? leftPath : rightPath; }
-    function getItems(side){ return side==='left' ? leftItems : rightItems; }
-    function getOtherPath(side){ return side==='left' ? rightPath : leftPath; }
-
-    function renderBreadcrumb(side, path){
-        const el = side==='left' ? leftBreadcrumb : rightBreadcrumb;
-        if(!path){el.innerHTML=`<span class="fm-bc-seg" data-path="" data-side="${side}">🖥 根目录</span>`;return}
+    function renderBreadcrumb(path){
+        if(!path){rightBreadcrumb.innerHTML='<span class="fm-bc-seg" data-path="">🖥 根目录</span>';return}
         const sep = path.includes('/') ? '/' : '\\';
         const parts = path.split(/[\/\\]/).filter(Boolean);
-        let html = `<span class="fm-bc-seg" data-path="" data-side="${side}">🖥 根</span>`;
+        let html = '<span class="fm-bc-seg" data-path="">🖥 根</span>';
         let acc = '';
         parts.forEach((p,i)=>{
             acc += (i===0&&/^[A-Za-z]:$/.test(p)) ? p+sep : (i===0?p:sep+p);
-            if(i===0&&/^[A-Za-z]:$/.test(p)){
-                html += `<span class="fm-bc-sep">›</span><span class="fm-bc-seg" data-path="${acc}" data-side="${side}">${p}${sep}</span>`;
-            } else {
-                html += `<span class="fm-bc-sep">›</span><span class="fm-bc-seg" data-path="${acc}" data-side="${side}">${p}</span>`;
-            }
+            html += `<span class="fm-bc-sep">›</span><span class="fm-bc-seg" data-path="${acc}">${(i===0&&/^[A-Za-z]:$/.test(p))?p+sep:p}</span>`;
         });
-        el.innerHTML = html;
+        rightBreadcrumb.innerHTML = html;
     }
 
-    function renderList(side, items){
-        const listEl = side==='left' ? leftList : rightList;
-        if(side==='left') leftItems = items || [];
-        else rightItems = items || [];
-        const arr = side==='left' ? leftItems : rightItems;
-        arr.sort((a,b)=>{
+    function renderList(items){
+        remoteItems = items || [];
+        remoteItems.sort((a,b)=>{
             if(a.is_dir&&!b.is_dir) return -1;
             if(!a.is_dir&&b.is_dir) return 1;
             return a.name.localeCompare(b.name);
         });
         let html = '<div class="fm-list-header"><span>名称</span><span>大小</span><span>修改时间</span></div>';
-        if(!arr.length){
-            html += '<div class="fm-empty">空目录</div>';
-        } else {
-            arr.forEach((item,i)=>{
+        if(!remoteItems.length){ html += '<div class="fm-empty">空目录</div>'; }
+        else {
+            remoteItems.forEach((item,i)=>{
                 const icon = item.is_dir ? '📁' : '📄';
                 const size = item.is_dir ? '-' : fmtSize(item.size);
                 const time = fmtTime(item.mtime);
-                html += `<div class="fm-item" data-idx="${i}" data-dir="${item.is_dir?1:0}" data-name="${item.name}" data-path="${item.path||''}" data-side="${side}" draggable="true"><div class="fm-item-name"><span class="fm-item-icon">${icon}</span><span title="${item.name}">${item.name}</span></div><span class="fm-item-size">${size}</span><span class="fm-item-time">${time}</span></div>`;
+                html += `<div class="fm-item" data-idx="${i}" data-dir="${item.is_dir?1:0}" data-name="${item.name}" data-path="${item.path||''}"><div class="fm-item-name"><span class="fm-item-icon">${icon}</span><span title="${item.name}">${item.name}</span></div><span class="fm-item-size">${size}</span><span class="fm-item-time">${time}</span></div>`;
             });
         }
-        listEl.innerHTML = html;
+        rightList.innerHTML = html;
     }
 
-    // ═══════════════════════════════════════════
-    // TRANSFER QUEUE (拖拽复制反馈)
-    // ═══════════════════════════════════════════
-
-    function addTransfer(name, direction){
-        const id = ++xferId;
-        transfers.push({id, name, direction, progress:0, status:'active'});
-        renderQueue();
-        return id;
-    }
-    function updateTransfer(id, updates){
-        const t = transfers.find(x=>x.id===id);
-        if(t) Object.assign(t,updates);
-        renderQueue();
-    }
+    // ═══ 传输队列 ═══
+    function addTransfer(name, dir){ const id=++xferId; transfers.push({id,name,direction:dir,progress:0,status:'active'}); renderQueue(); return id; }
     function renderQueue(){
         const active = transfers.filter(t=>t.status!=='done'||Date.now()-t._doneAt<5000);
-        if(!active.length){queueEl.style.display='none';return}
-        queueEl.style.display='';
         queueCount.textContent = active.length;
+        if(!active.length){queueList.innerHTML='<div class="fm-empty" style="padding:14px;font-size:12px">暂无传输记录</div>';return}
         queueList.innerHTML = active.map(t=>{
-            const arrow = t.direction==='copy' ? '📋' : (t.direction==='up' ? '⬆' : '⬇');
-            const dirTag = t.direction==='copy'
-                ? '<span class="dir-tag up">复制</span>'
-                : t.direction==='up'
-                ? '<span class="dir-tag up">上传</span>'
-                : '<span class="dir-tag down">下载</span>';
+            const dirTag = t.direction==='up' ? '<span class="dir-tag up">⬆ 上传</span>' : '<span class="dir-tag down">⬇ 下载</span>';
             const fillCls = t.status==='done'?'done':t.status==='error'?'err':'';
-            const statusText = t.status==='done'?'完成':t.status==='error'?'失败':'进行中';
-            return `<div class="fm-xfer"><span class="icon">${arrow}</span>${dirTag}<div class="info"><div class="fname">${t.name}</div></div><div class="bar"><div class="bar-fill ${fillCls}" style="width:${t.status==='done'?100:50}%"></div></div><span class="status">${statusText}</span></div>`;
+            const statusText = t.status==='done'?'完成':t.status==='error'?'失败':'传输中';
+            return `<div class="fm-xfer">${dirTag}<div class="info"><div class="fname">${t.name}</div></div><div class="bar"><div class="bar-fill ${fillCls}" style="width:${t.status==='done'?100:50}%"></div></div><span class="status">${statusText}</span></div>`;
         }).join('');
     }
 
-    // ═══════════════════════════════════════════
-    // COPY: 跨栏拖拽 = agent 内部复制
-    // ═══════════════════════════════════════════
-
-    function copyToOtherSide(item, fromSide){
-        const srcPath = item.path || pathJoin(getPath(fromSide), item.name);
-        const destDir = getOtherPath(fromSide);
-        if(!destDir){toast('对面栏还在根目录，请先进入一个目录','warn');return}
-        const tid = addTransfer(item.name, 'copy');
-        send({type:'copy_file', src: srcPath, dest_dir: destDir});
-        return tid;
-    }
-
-    // ═══════════════════════════════════════════
-    // UPLOAD: 从浏览器拖入文件到面板 → 上传到远程
-    // ═══════════════════════════════════════════
-
+    // ═══ 上传 ═══
     function uploadFileToRemote(file, dirPath){
-        if(!dirPath){toast('请先进入一个目录','warn');return}
+        const dir = dirPath || remotePath;
+        if(!dir){toast('请先在右侧进入一个目录','warn');return}
         const tid = addTransfer(file.name, 'up');
         const reader = new FileReader();
-        reader.onload = ()=>{
-            const b64 = reader.result.split(',')[1];
-            send({type:'upload_file', dir_path:dirPath, name:file.name, data:b64});
-        };
-        reader.onerror = ()=>{
-            updateTransfer(tid,{status:'error'});
-            toast(`读取失败: ${file.name}`,'err');
-        };
+        reader.onload = ()=>{ send({type:'upload_file', dir_path:dir, name:file.name, data:reader.result.split(',')[1]}); };
+        reader.onerror = ()=>{ const t=transfers.find(x=>x.id===tid); if(t){t.status='error';renderQueue()} toast(`读取失败: ${file.name}`,'err'); };
         reader.readAsDataURL(file);
-        return tid;
     }
-
-    // ── download (browser save) ──
-    function downloadToBrowser(item, side){
+    function downloadToBrowser(item){
         if(!item||item.is_dir) return;
-        const fullPath = item.path || pathJoin(getPath(side), item.name);
-        const tid = addTransfer(item.name, 'down');
-        send({type:'download_file', path:fullPath});
+        addTransfer(item.name, 'down');
+        send({type:'download_file', path: item.path || pathJoin(remotePath, item.name)});
     }
-
-    // ── mkdir ──
-    function mkdirPrompt(side){
-        const curPath = getPath(side);
-        if(!curPath){toast('请先进入一个目录','warn');return}
+    function mkdirPrompt(){
+        if(!remotePath){toast('请先进入一个目录','warn');return}
         const name = prompt('新建文件夹名称:');
         if(!name||!name.trim()) return;
-        const fullPath = pathJoin(curPath, name.trim());
-        send({type:'create_dir', path:fullPath});
+        send({type:'create_dir', path:pathJoin(remotePath, name.trim())});
+    }
+    function deleteItem(item){
+        if(!item||!confirm(`确定删除 "${item.name}" 吗？`)) return;
+        send({type:'delete_item', path: item.path || pathJoin(remotePath, item.name)});
     }
 
-    // ── delete ──
-    function deleteItem(item, side){
-        if(!item) return;
-        if(!confirm(`确定删除 "${item.name}" 吗？`)) return;
-        const fullPath = item.path || pathJoin(getPath(side), item.name);
-        send({type:'delete_item', path:fullPath});
-    }
-
-    // ═══════════════════════════════════════════
-    // CONTEXT MENU
-    // ═══════════════════════════════════════════
-
-    function showCtx(e, item, side){
-        e.preventDefault();
-        ctxTarget = item;
-        ctxSide = side;
-        ctxMenu.classList.remove('open');
-        ctxMenu.style.left = e.clientX+'px';
-        ctxMenu.style.top = e.clientY+'px';
-        // show/hide items
+    // ═══ 右键菜单 ═══
+    function showCtx(e, item){
+        e.preventDefault(); ctxTarget = item;
+        ctxMenu.style.left = e.clientX+'px'; ctxMenu.style.top = e.clientY+'px';
         ctxMenu.querySelectorAll('[data-action="open"]').forEach(el=>{el.style.display=item.is_dir?'':'none'});
-        ctxMenu.querySelectorAll('[data-action="copy-to-other"]').forEach(el=>{el.style.display=''});
         ctxMenu.querySelectorAll('[data-action="download-browser"]').forEach(el=>{el.style.display=item.is_dir?'none':''});
         ctxMenu.classList.add('open');
     }
-    function closeCtx(){
-        ctxMenu.classList.remove('open');
-        ctxTarget=null;
-        ctxSide='';
-    }
+    function closeCtx(){ ctxMenu.classList.remove('open'); ctxTarget=null; }
 
-    // ═══════════════════════════════════════════
-    // WS MESSAGE HANDLERS
-    // ═══════════════════════════════════════════
-
+    // ═══ WS 消息 ═══
     function onDirContent(m){
-        const side = m.side || 'right';
-        const path = m.path || '';
-        if(side==='left') leftPath = path;
-        else rightPath = path;
-        renderBreadcrumb(side, path);
-        renderList(side, m.items);
-        // disable mkdir on root
-        const isRoot = !path;
-        const mkdirBtn = side==='left' ? $('fm-left-mkdir') : $('fm-right-mkdir');
-        mkdirBtn.disabled = isRoot;
-        mkdirBtn.title = isRoot ? '请先进入某个驱动器/目录' : '新建文件夹';
+        remotePath = m.path || '';
+        renderBreadcrumb(remotePath); renderList(m.items);
+        $('fm-right-mkdir').disabled = !remotePath;
     }
     function onFileSaved(m){
-        if(m.success){
-            toast(`✓ 已保存: ${m.path}`,'ok');
-            const t = transfers.find(x=>x.direction==='up'&&x.status==='active');
-            if(t){t.status='done';t.progress=100;t._doneAt=Date.now();renderQueue()}
-            // refresh both panes
-            browseTo('left', leftPath);
-            browseTo('right', rightPath);
-        } else {
-            toast(`保存失败: ${m.error||''}`,'err');
-            const t = transfers.find(x=>x.direction==='up'&&x.status==='active');
-            if(t){t.status='error';renderQueue()}
-        }
+        if(m.success){ toast(`✓ 已上传: ${m.name}`,'ok'); const t=transfers.find(x=>x.direction==='up'&&x.status==='active'); if(t){t.status='done';t._doneAt=Date.now();renderQueue()} browseTo(remotePath); }
+        else { toast(`上传失败: ${m.error||''}`,'err'); const t=transfers.find(x=>x.direction==='up'&&x.status==='active'); if(t){t.status='error';renderQueue()} }
     }
-    function onFileCopied(m){
-        if(m.success){
-            toast(`✓ 已复制: ${m.name}`,'ok');
-            const t = transfers.find(x=>x.direction==='copy'&&x.status==='active');
-            if(t){t.status='done';t.progress=100;t._doneAt=Date.now();renderQueue()}
-            // refresh both panes
-            browseTo('left', leftPath);
-            browseTo('right', rightPath);
-        } else {
-            toast(`复制失败: ${m.error||''}`,'err');
-            const t = transfers.find(x=>x.direction==='copy'&&x.status==='active');
-            if(t){t.status='error';renderQueue()}
-        }
-    }
+    function onFileCopied(m){} // legacy
     function onFileData(m){
-        const t = transfers.find(x=>x.direction==='down'&&x.status==='active');
-        if(t){t.status='done';t.progress=100;t._doneAt=Date.now();renderQueue()}
+        const t=transfers.find(x=>x.direction==='down'&&x.status==='active');
+        if(t){t.status='done';t._doneAt=Date.now();renderQueue()}
         try{
-            const binary = atob(m.data);
-            const bytes = new Uint8Array(binary.length);
-            for(let i=0;i<binary.length;i++) bytes[i]=binary.charCodeAt(i);
-            const blob = new Blob([bytes]);
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href=url;a.download=m.name;document.body.appendChild(a);a.click();a.remove();
-            URL.revokeObjectURL(url);
+            const bin=atob(m.data),bytes=new Uint8Array(bin.length);
+            for(let i=0;i<bin.length;i++) bytes[i]=bin.charCodeAt(i);
+            const url=URL.createObjectURL(new Blob([bytes]));
+            const a=document.createElement('a'); a.href=url; a.download=m.name; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
             toast(`✓ 已下载: ${m.name}`,'ok');
-        }catch(e){
-            toast(`下载失败: ${e.message}`,'err');
-        }
+        }catch(e){ toast(`下载失败: ${e.message}`,'err'); }
     }
-    function onDirCreated(m){
-        toast('✓ 文件夹已创建','ok');
-        browseTo('left', leftPath);
-        browseTo('right', rightPath);
-    }
-    function onItemDeleted(m){
-        toast('✓ 已删除','ok');
-        browseTo('left', leftPath);
-        browseTo('right', rightPath);
-    }
+    function onDirCreated(m){ toast('✓ 文件夹已创建','ok'); browseTo(remotePath); }
+    function onItemDeleted(m){ toast('✓ 已删除','ok'); browseTo(remotePath); }
 
-    // ═══════════════════════════════════════════
-    // EVENT BINDINGS
-    // ═══════════════════════════════════════════
-
-    // open/close
+    // ═══ 事件绑定 ═══
     btnFile.addEventListener('click', open);
     $('fm-close').addEventListener('click', close);
     overlay.addEventListener('click', e=>{if(e.target===overlay)close()});
+    $('fm-right-mkdir').addEventListener('click', mkdirPrompt);
+    $('fm-right-refresh').addEventListener('click', ()=>browseTo(remotePath));
 
-    // mkdir & refresh for both sides
-    $('fm-left-mkdir').addEventListener('click', ()=>mkdirPrompt('left'));
-    $('fm-left-refresh').addEventListener('click', ()=>browseTo('left', leftPath));
-    $('fm-right-mkdir').addEventListener('click', ()=>mkdirPrompt('right'));
-    $('fm-right-refresh').addEventListener('click', ()=>browseTo('right', rightPath));
-
-    // breadcrumb click (both sides)
-    [leftBreadcrumb, rightBreadcrumb].forEach(el=>{
-        el.addEventListener('click',e=>{
-            const seg = e.target.closest('.fm-bc-seg');
-            if(!seg) return;
-            browseTo(seg.dataset.side, seg.dataset.path);
-        });
+    rightBreadcrumb.addEventListener('click',e=>{
+        const seg = e.target.closest('.fm-bc-seg');
+        if(seg) browseTo(seg.dataset.path);
     });
-
-    // list dblclick, click, contextmenu (both sides)
-    function bindListEvents(listEl, side){
-        listEl.addEventListener('dblclick',e=>{
-            const row = e.target.closest('.fm-item');
-            if(!row) return;
-            const idx = +row.dataset.idx;
-            const items = getItems(side);
-            const item = items[idx];
-            if(!item) return;
-            if(item.is_dir){
-                browseTo(side, item.path || pathJoin(getPath(side), item.name));
-            }
-        });
-        listEl.addEventListener('click',e=>{
-            const row = e.target.closest('.fm-item');
-            listEl.querySelectorAll('.fm-item.selected').forEach(el=>el.classList.remove('selected'));
-            if(row) row.classList.add('selected');
-        });
-        listEl.addEventListener('contextmenu',e=>{
-            const row = e.target.closest('.fm-item');
-            if(!row) return;
-            const idx = +row.dataset.idx;
-            const items = getItems(side);
-            const item = items[idx];
-            if(item) showCtx(e, item, side);
-        });
-    }
-    bindListEvents(leftList, 'left');
-    bindListEvents(rightList, 'right');
-
-    // context menu actions
+    rightList.addEventListener('dblclick',e=>{
+        const row = e.target.closest('.fm-item');
+        if(!row) return;
+        const item = remoteItems[+row.dataset.idx];
+        if(item && item.is_dir) browseTo(item.path || pathJoin(remotePath, item.name));
+    });
+    rightList.addEventListener('click',e=>{
+        const row = e.target.closest('.fm-item');
+        rightList.querySelectorAll('.fm-item.selected').forEach(el=>el.classList.remove('selected'));
+        if(row) row.classList.add('selected');
+    });
+    rightList.addEventListener('contextmenu',e=>{
+        const row = e.target.closest('.fm-item');
+        if(!row) return;
+        const item = remoteItems[+row.dataset.idx];
+        if(item) showCtx(e, item);
+    });
     ctxMenu.addEventListener('click',e=>{
         const act = e.target.closest('.fm-ctx-item');
         if(!act||!ctxTarget) return;
-        const action = act.dataset.action;
-        if(action==='open'&&ctxTarget.is_dir) browseTo(ctxSide, ctxTarget.path || pathJoin(getPath(ctxSide),ctxTarget.name));
-        else if(action==='copy-to-other') copyToOtherSide(ctxTarget, ctxSide);
-        else if(action==='download-browser') downloadToBrowser(ctxTarget, ctxSide);
-        else if(action==='delete') deleteItem(ctxTarget, ctxSide);
+        const a = act.dataset.action;
+        if(a==='open'&&ctxTarget.is_dir) browseTo(ctxTarget.path || pathJoin(remotePath,ctxTarget.name));
+        else if(a==='download-browser') downloadToBrowser(ctxTarget);
+        else if(a==='delete') deleteItem(ctxTarget);
         closeCtx();
     });
+    document.addEventListener('click',e=>{ if(!e.target.closest('.fm-ctx')) closeCtx(); });
 
-    document.addEventListener('click',e=>{
-        if(!e.target.closest('.fm-ctx')) closeCtx();
+    // ═══ 左栏拖拽上传 ═══
+    localDrop.addEventListener('dragover',e=>{ e.preventDefault(); e.dataTransfer.dropEffect='copy'; localDrop.classList.add('drag-active'); });
+    localDrop.addEventListener('dragleave',e=>{ if(!localDrop.contains(e.relatedTarget)) localDrop.classList.remove('drag-active'); });
+    localDrop.addEventListener('drop',e=>{
+        e.preventDefault(); localDrop.classList.remove('drag-active');
+        const files=[...e.dataTransfer.files]; if(!files.length) return;
+        if(!remotePath){toast('请先在右侧进入一个目录','warn');return}
+        files.forEach(f=>uploadFileToRemote(f));
+        toast(`开始上传 ${files.length} 个文件`,'ok');
+    });
+    fileInput.addEventListener('change',()=>{
+        const files=[...fileInput.files]; if(!files.length) return;
+        if(!remotePath){toast('请先在右侧进入一个目录','warn');return}
+        files.forEach(f=>uploadFileToRemote(f));
+        toast(`开始上传 ${files.length} 个文件`,'ok');
+        fileInput.value='';
+    });
+    // 右栏也接受文件拖入
+    rightPane.addEventListener('dragover',e=>{ if(e.dataTransfer.types.includes('Files')){e.preventDefault();rightPane.classList.add('drag-hover')} });
+    rightPane.addEventListener('dragleave',e=>{ if(!rightPane.contains(e.relatedTarget))rightPane.classList.remove('drag-hover'); });
+    rightPane.addEventListener('drop',e=>{
+        e.preventDefault(); rightPane.classList.remove('drag-hover');
+        const files=[...e.dataTransfer.files];
+        if(files.length){ if(!remotePath){toast('请先进入一个目录','warn');return} files.forEach(f=>uploadFileToRemote(f)); toast(`开始上传 ${files.length} 个文件`,'ok'); }
     });
 
-    // ═══════════════════════════════════════════
-    // DRAG & DROP (cross-pane = copy)
-    // ═══════════════════════════════════════════
-
-    let dragData = null;  // {side, item}
-
-    function bindDragSource(listEl, side){
-        listEl.addEventListener('dragstart',e=>{
-            const row = e.target.closest(`.fm-item[data-side="${side}"]`);
-            if(!row) return;
-            const idx = +row.dataset.idx;
-            const items = getItems(side);
-            const item = items[idx];
-            if(!item){e.preventDefault();return}
-            row.classList.add('dragging');
-            dragData = {side, item};
-            e.dataTransfer.effectAllowed = 'copy';
-            e.dataTransfer.setData('text/plain', item.name);
-        });
-        listEl.addEventListener('dragend',e=>{
-            listEl.querySelectorAll('.dragging').forEach(el=>el.classList.remove('dragging'));
-            dragData = null;
-        });
-    }
-    bindDragSource(leftList, 'left');
-    bindDragSource(rightList, 'right');
-
-    function bindDropTarget(paneEl, listEl, side){
-        paneEl.addEventListener('dragover',e=>{
-            // accept from opposite side
-            if(dragData && dragData.side !== side){
-                e.preventDefault();
-                e.dataTransfer.dropEffect = 'copy';
-                paneEl.classList.add('drag-hover');
-                const row = e.target.closest('.fm-item[data-dir="1"]');
-                listEl.querySelectorAll('.drop-target').forEach(el=>el.classList.remove('drop-target'));
-                if(row) row.classList.add('drop-target');
-                return;
-            }
-            // also accept native file drops from OS
-            if(e.dataTransfer.types.includes('Files')){
-                e.preventDefault();
-                paneEl.classList.add('drag-hover');
-            }
-        });
-        paneEl.addEventListener('dragleave',e=>{
-            if(!paneEl.contains(e.relatedTarget)){
-                paneEl.classList.remove('drag-hover');
-                listEl.querySelectorAll('.drop-target').forEach(el=>el.classList.remove('drop-target'));
-            }
-        });
-        paneEl.addEventListener('drop',e=>{
-            e.preventDefault();
-            paneEl.classList.remove('drag-hover');
-            listEl.querySelectorAll('.drop-target').forEach(el=>el.classList.remove('drop-target'));
-
-            if(dragData && dragData.side !== side){
-                // cross-pane drag = remote copy
-                const item = dragData.item;
-
-                // determine target: dropped onto a dir row → copy into that dir
-                let destDir = getPath(side);
-                const row = e.target.closest('.fm-item[data-dir="1"]');
-                if(row){
-                    const idx = +row.dataset.idx;
-                    const items = getItems(side);
-                    const target = items[idx];
-                    if(target) destDir = target.path || pathJoin(getPath(side), target.name);
-                }
-
-                if(!destDir){toast('请先进入一个目录','warn');return}
-                copyToOtherSide(item, dragData.side);
-                dragData = null;
-                return;
-            }
-
-            // native file drop (from OS desktop)
-            const files = [...e.dataTransfer.files];
-            if(files.length){
-                const destDir = getPath(side);
-                if(!destDir){toast('请先进入一个目录','warn');return}
-                files.forEach(f=>uploadFileToRemote(f, destDir));
-                toast(`开始上传 ${files.length} 个文件`,'ok');
-            }
-        });
-    }
-    bindDropTarget(leftPane, leftList, 'left');
-    bindDropTarget(rightPane, rightList, 'right');
-
-    // Escape key
-    document.addEventListener('keydown',e=>{
-        if(e.key==='Escape'&&overlay.classList.contains('open')){close();e.stopPropagation()}
-    });
-
-    // auto-clean done transfers
-    setInterval(()=>{
-        const now = Date.now();
-        transfers = transfers.filter(t=>!(t.status==='done'&&t._doneAt&&now-t._doneAt>8000));
-        renderQueue();
-    },3000);
+    document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&overlay.classList.contains('open')){close();e.stopPropagation()} });
+    setInterval(()=>{ transfers=transfers.filter(t=>!(t.status==='done'&&t._doneAt&&Date.now()-t._doneAt>8000)); renderQueue(); },3000);
 
     return {open,close,uploadFileToRemote,onDirContent,onFileSaved,onFileData,onFileCopied,onDirCreated,onItemDeleted};
 })();
+
 
 // ═══════════════════════════════════════════════════
 // ═══ 设备管理 (DEV) — localStorage 本地存储 ═══
