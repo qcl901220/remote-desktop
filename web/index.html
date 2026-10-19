@@ -476,8 +476,11 @@ async function connect(isReconnect=false){
 
 async function handleMsg(m){
     switch(m.type){
-    case'auth_challenge':{const r=await hmacSha256(passwordHash,m.challenge);ws.send(JSON.stringify({type:'auth_response',response:r}));break}
-    case'auth_failed':toast('密码错误','err');setConn('err','认证失败');cancelReconn();resetUI();break;
+    case'auth_challenge':{
+        const r=await hmacSha256(passwordHash,m.challenge);
+        console.log('[RemoteDesk Auth]', {challenge:m.challenge.slice(0,16), passwordHash:passwordHash.slice(0,16), response:r.slice(0,16), hasCryptoSubtle:!!(window.crypto&&crypto.subtle)});
+        ws.send(JSON.stringify({type:'auth_response',response:r}));break}
+    case'auth_failed':toast('密码错误','err');console.error('[RemoteDesk] 认证失败 — 请确认密码正确且页面为最新版本(Ctrl+Shift+R强刷)');setConn('err','认证失败');cancelReconn();resetUI();break;
     case'connected':
         reconnecting=false;cancelReconn();setConn('on','已连接');
         screenW=m.screen.width;screenH=m.screen.height;
