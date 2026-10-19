@@ -102,7 +102,8 @@ class ScreenCapture:
         self._last_frame: Optional[bytes] = None
         self.stats_total = 0
         self.stats_skipped = 0
-        self._force_frame_counter = 0  # 强制关键帧计数器
+        self._last_force_time = time.time()  # 强制关键帧时间戳
+        self._error_count = 0  # 连续错误计数
 
     @property
     def monitors(self) -> list:
@@ -134,25 +135,39 @@ class ScreenCapture:
         self._last_hash = None
 
     def capture(self) -> Optional[bytes]:
-        monitor = self.sct.monitors[self.monitor_index]
-        screenshot = self.sct.grab(monitor)
+        try:
+            monitor = self.sct.monitors[self.monitor_index]
+            screenshot = self.sct.grab(monitor)
+            self._error_count = 0  # 成功了，重置错误计数
+        except Exception as e:
+            self._error_count += 1
+            # 连续错误超过 10 次，重新初始化 mss（恢复 DXGI/GDI 会话）
+            if self._error_count >= 10:
+                logger.warning(f"截屏连续失败 {self._error_count} 次，重新初始化捕获器")
+                try:
+                    self.sct = mss.MSS()
+                    self._error_count = 0
+                except Exception:
+                    pass
+            raise  # 让上层 broadcast_screen 的 except 处理
+
         raw = screenshot.bgra
         self.stats_total += 1
-        self._force_frame_counter += 1
 
         # 差帧检测：采样哈希比较
         step = max(1, len(raw) // 10000)
         frame_hash = hashlib.md5(raw[::step]).digest()
 
-        # 每 30 帧强制发送一个关键帧（约每秒 1 帧），防止画面完全卡住
-        force = self._force_frame_counter >= 30
+        # 每秒至少发送 1 帧（基于时间，不受异常影响）
+        now = time.time()
+        force = (now - self._last_force_time) >= 1.0
 
         if frame_hash == self._last_hash and self._last_frame is not None and not force:
             self.stats_skipped += 1
             return None
 
         if force:
-            self._force_frame_counter = 0
+            self._last_force_time = now
 
         self._last_hash = frame_hash
         img = Image.frombytes("RGB", screenshot.size, raw, "raw", "BGRX")
