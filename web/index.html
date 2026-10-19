@@ -418,15 +418,15 @@ for(let i=0;i<64;i++){const S1=rr(6,e)^rr(11,e)^rr(25,e);const ch=(e&f)^(~e&g);c
 H0=(H0+a)|0;H1=(H1+b)|0;H2=(H2+c)|0;H3=(H3+d)|0;H4=(H4+e)|0;H5=(H5+f)|0;H6=(H6+g)|0;H7=(H7+h)|0}
 return[H0,H1,H2,H3,H4,H5,H6,H7]}
 return{
-hash(msg){const enc=new TextEncoder().encode(msg);return sha256bytes([...enc]).map(w=>w.toString(16).padStart(8,'0')).join('')},
-hashBytes(bytes){return sha256bytes([...bytes]).map(w=>w.toString(16).padStart(8,'0')).join('')},
+hash(msg){const enc=new TextEncoder().encode(msg);return sha256bytes([...enc]).map(w=>(w>>>0).toString(16).padStart(8,'0')).join('')},
+hashBytes(bytes){return sha256bytes([...bytes]).map(w=>(w>>>0).toString(16).padStart(8,'0')).join('')},
 hmac(key,msg){const enc=new TextEncoder();const kb=[...enc.encode(key)],mb=[...enc.encode(msg)];
 let k=kb;if(k.length>64){k=[...sha256bytes([...k]).flatMap(w=>[(w>>>24)&0xff,(w>>>16)&0xff,(w>>>8)&0xff,w&0xff])]}
 while(k.length<64)k.push(0);
 const opad=k.map(b=>b^0x5c),ipad=k.map(b=>b^0x36);
 const inner=sha256bytes([...ipad,...mb]);
 const innerBytes=inner.flatMap(w=>[(w>>>24)&0xff,(w>>>16)&0xff,(w>>>8)&0xff,w&0xff]);
-return sha256bytes([...opad,...innerBytes]).map(w=>w.toString(16).padStart(8,'0')).join('')}
+return sha256bytes([...opad,...innerBytes]).map(w=>(w>>>0).toString(16).padStart(8,'0')).join('')}
 }})();
 
 async function sha256(t){
